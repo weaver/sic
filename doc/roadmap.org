@@ -1,0 +1,79 @@
+#+TITLE:     Sic Roadmap
+
+* Compiler and Module System
+** Import
+   With rename.
+
+** Source
+   The popular file implies interface by default, with optional
+   Scheme48-style separation of interface and implementation.
+
+** Syntactic Closure
+   What are the differences between interface and environment? Between
+   implementation and lambda body? Can we use the same gear for
+   syntatic closure and lambda? Does runtime closure make the
+   difference?
+
+** Increment Compilation
+   Track the interface changes. Interfaces include macro text.
+
+** Macro Expansion
+   Riaxpander? Can this be a module, where we only rely on interfaces
+   and let different macro expanders manage the macro texts (I don't
+   see why not).
+
+** Scheme Backend
+   A bootstrap, the goal is to make it work.
+
+*** symbol
+*** lambda
+*** goto
+*** debugging symbol map
+*** delimited continuations
+
+** LLVM Backend
+   A production system, the goal is to make it stable and fast.
+
+* Modules
+** Generic Functions
+   primitive data types depend on them.
+
+** Data Types
+*** Char
+*** FUTURE Unicode
+*** String
+*** Fixed
+*** Float
+*** FUTURE Rational
+*** FUTURE Big
+*** Number
+*** File
+*** Socket
+*** Port
+    support switching character encodings (MIME), delayed data pull
+    (Python slurps files in byte streams and only produces wide
+    characters when the data is read in a wide-character way).
+
+** REPL
+*** Reader
+*** Eval compiler
+*** Print
+*** Environment introspection
+*** Breakpoint interface
+*** Debugger
+
+
+* COMMENT Org mode
+#+SEQ_TODO: TODO LANG WEAVER | DONE WONT FUTURE
+#+LANGUAGE:  en
+#+OPTIONS:   H:4 num:t toc:t \n:nil @:t ::t |:t ^:t -:t f:t *:t <:t
+#+OPTIONS:   TeX:t LaTeX:nil skip:nil d:nil todo:t pri:nil tags:not-in-toc
+#+INFOJS_OPT: view:nil toc:nil ltoc:t mouse:underline buttons:0 path:http://orgmode.org/org-info.js
+#+EXPORT_SELECT_TAGS: export
+#+EXPORT_EXCLUDE_TAGS: noexport
+#+LINK_UP:
+#+LINK_HOME:
+# Local Variables:
+# mode:org
+# org-cycle-include-plain-lists:nil
+# End:
