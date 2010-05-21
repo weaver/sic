@@ -1,37 +1,26 @@
+;; (define-syntax assert
+;;   (syntax-rules (=>)
+;;     ((_ e1 => v1 e2 ...)
+;;      (and (assert e1 => v1) (assert e2 ...)))
+;;     ((_ e1 e2 ...)
+;;      (and (assert e1) (assert e2 ...)))
+;;     ((_ expr => val)
+;;      (if (not (equal? expr val))
+;;          (assert-error 'expr "=>" 'val)
+;;          #t))
+;;     ((_ expr)
+;;      (if (not expr)
+;;          (assert-error 'expr)
+;;          #t))))
+
 (define-syntax assert
   (syntax-rules (=>)
-    ((_ e1 e2 ...)
-     (and (assert e1)
-          (assert e2 ...)))
     ((_ expr => val)
      (if (not (equal? expr val))
-         (assert-error 'expr 'val)
+         (assert-error 'expr "=>" 'val)
          #t))
-    ((_ expr)
-     (if (not expr)
-         (assert-error 'expr)
-         #t))))
-
-(define-syntax test
-  (syntax-rules ()
-    ((_ e1 e2 ...)
-     (cons e2)
-     )
-    ))
-
-(define-syntax assert1
-  (syntax-rules ()
-    ((_ expr)
-     (if (not expr)
-         (assert-error 'expr)
-         #t))))
-
-(define-syntax assert2
-  (syntax-rules ()
-    ((_ (expr val))
-     (if (not (equal? expr val))
-         (assert-error 'expr 'val)
-         #t))))
+    ((_ e1 => v1 e2 ...)
+     (and (assert e1 => v1) (assert e2 ...)))))
 
 (define (assert-error . stuff)
   (error
@@ -40,7 +29,12 @@
        (display "assertion failed:")
        (for-each (lambda (x)
                    (display " ")
-                   (display x))
+                   (write x))
                  stuff)))))
 
-(assert #t)
+;; (assert
+;;  1 => 1
+;;  'foo => 'foo
+;;  '(foo bar) => '(foo bar)
+;;  1 => 2
+;;  3 => 4)
