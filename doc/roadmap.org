@@ -26,8 +26,16 @@
    A bootstrap, the goal is to make it work.
 
 *** symbol
-*** lambda
 *** goto
+    In Scheme, goto should probably be inverted (and inefficient) for
+    simplicity and R5-y-ness. Capture the environment at the goto
+    spot, jump to a regular lambda, and install the calling
+    environment at the top.
+
+*** lambda
+    In order to support goto, we'll need to avoid closure. Compilation
+    can eliminate procedure lookup.
+
 *** debugging symbol map
 *** delimited continuations
 
@@ -61,7 +69,6 @@
 *** Environment introspection
 *** Breakpoint interface
 *** Debugger
-
 
 * COMMENT Org mode
 #+SEQ_TODO: TODO LANG WEAVER | DONE WONT FUTURE

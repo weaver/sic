@@ -22,17 +22,24 @@
  (compile-literal '() '(foo (bar (baz zup))))
   => '((foo (bar (baz zup)))))
 
+(define (compile-define env form)
+  )
+
+(define (compile-lambda env form)
+
+  )
+
 (define (compile form env code)
   (if (null? form)
-      (lambda () (code env))
+      (create-runnable env code)
       (let ((head (car form))
             (tail (cdr form)))
         (cond ((eq 'quote head)
                (compile-literal tail))
               ((eq 'define head)
-               (compile-define env head tail))
+               (compile-define env tail))
               ((eq 'define-syntax head)
-               (compile-syntax env head tail))
+               (compile-syntax env tail))
               ((eq 'lambda head)
                (compile-lambda tail))
               ((eq 'if head)
