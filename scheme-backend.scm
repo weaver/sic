@@ -2,9 +2,32 @@
   (not (or (pair? obj)
            (null? obj))))
 
-(define (inter-symbol env sym val)
-  (cons (cons sym val)
+(define (pdefine env sym)
+  (set-car! env (cons (list sym *undefined*) (car env)))
+  env)
+
+(define (pbind env sym)
+  (cons (list (list sym))
         env))
+
+(define (plookup env sym)
+  (call/cc
+   (lambda (return)
+     (map (lambda (frame)
+            (map (lambda (pair)
+                   (if (eq (car pair) sym)
+                       (return pair)))
+                 frame))
+          env)))
+  'lookup-error)
+
+(define (pset! env sym val)
+  (let (pair (plookup env sym))
+    (set-cdr! pair (list val))
+    env))
+
+(define (pblock env body)
+  )
 
 (define (compile-literal env form)
   (if (null? form)

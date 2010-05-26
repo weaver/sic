@@ -25,19 +25,39 @@
 ** Scheme Backend
    A bootstrap, the goal is to make it work.
 
-*** symbol
-*** goto
-    In Scheme, goto should probably be inverted (and inefficient) for
-    simplicity and R5-y-ness. Capture the environment at the goto
-    spot, jump to a regular lambda, and install the calling
-    environment at the top.
+*** primitive operations
+**** define
+     modify the current environment frame.
 
-*** lambda
-    In order to support goto, we'll need to avoid closure. Compilation
-    can eliminate procedure lookup.
+**** bind
+     create a new environment frame.
 
-*** debugging symbol map
-*** delimited continuations
+**** set!
+     modify the value associated with a name in place.
+
+**** block
+     a set of instructions, no environment modifcation
+
+*** data types
+**** symbol
+**** cons, etc.
+
+*** stuff to think about
+**** goto
+     In Scheme, goto should probably be inverted (and inefficient) for
+     simplicity and R5-y-ness. Capture the environment at the goto
+     spot, jump to a regular lambda, and install the calling
+     environment at the top.
+
+**** lambda
+     In order to support goto, we'll need to avoid closure. Compilation
+     can eliminate procedure lookup. combination of bind and block.
+
+**** debugging symbol map
+
+**** delimited continuations
+     the entry point ensures that interesting steps have not been
+     compiled away.
 
 ** LLVM Backend
    A production system, the goal is to make it stable and fast.
