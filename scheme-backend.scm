@@ -33,53 +33,53 @@
         env))
 
 ;;;; Analysis
-(define (analyse-self-eval e)
+(define (analyze-self-eval e)
   (lambda (env) e))
 
-(define (analyse-quoted e)
+(define (analyze-quoted e)
   (let ((q (quote e)))
     (lambda (env) q)))
 
-(define (analyse-variable e)
+(define (analyze-variable e)
   (lambda (env) (env-lookup e)))
 
 (define define-variable cadr)
 (define define-value caddr)
 
-(define (analyse-define e)
+(define (analyze-define e)
   (let ((var (define-variable e))
-        (val (analyse (define-value e))))
+        (val (analyze (define-value e))))
     (lambda (env) (env-define! env var val))))
 
 (define set-variable cadr)
 (define set-value caddr)
 
-(define (analyse-set! e)
+(define (analyze-set! e)
   (let ((var (set-variable e))
-        (val (analyse (set-value e))))
+        (val (analyze (set-value e))))
     (lambda (env) (env-set! env var val))))
 
 (define if-predicate cadr)
 (define if-then caddr)
 (define if-else cadddr)
 
-(define (analyse-if e)
-  (let ((pred? (analyse (if-predicate e)))
-        (then  (analyse (if-then e)))
-        (else  (analyse (if-else e))))
+(define (analyze-if e)
+  (let ((pred? (analyze (if-predicate e)))
+        (then  (analyze (if-then e)))
+        (else  (analyze (if-else e))))
     (lambda (env)
       (if (pred? env) (then env) (else env)))))
 
 (define lambda-formal cadr)
 (define lambda-body caddr)
 
-(define (analyse-lambda e)
+(define (analyze-lambda e)
   (let ((vars (lambda-formal e))
-        (body (analyse-begin (lambda-body e))))
+        (body (analyze-begin (lambda-body e))))
     (lambda (env)
       (call-proc vars body env))))
 
-(define (analyse-begin e)
+(define (analyze-begin e)
 
   )
 
