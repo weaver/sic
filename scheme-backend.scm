@@ -2,6 +2,9 @@
 ;;;; http://mitpress.mit.edu/sicp/full-text/book/book-Z-H-26.html#%_sec_4.1.7
 
 ;;;; Utility
+;; you need srfi-9 from somewhere or another. This is for PLT
+(require (lib "9.ss" "srfi"))
+
 (define-syntax assert
   (syntax-rules (=>)
     ((_ expr => val)
@@ -13,25 +16,22 @@
 
 (define-syntax if-let1
   (syntax-rules ()
-    ((_ ((sym exp)) then else)
-     (let ((sym exp))
+    ((_ ((sym expr)) then else)
+     (let ((sym expr))
        (if sym then else)))
-    ((_ ((exp)) then else)
-     (if exp then else))))
+    ((_ ((expr)) then else)
+     (if expr then else))))
 
 (define-syntax if-let*
   (syntax-rules ()
+    ;; provide a default else clause
+    ((_ bindings then) (if-let* bindings then #f))
+    ((_ () then else) (begin then))
+    ((_ (b1) then else) (if-let1 (b1) then else))
     ((_ (b1 b2 ...) then else)
      (if-let1 (b1)
               (if-let* (b2 ...) then else)
-              else))
-    ((_ (b1) then else)
-     (if-let1 (b1) then else))
-    ((_ () then else)
-     (begin then))
-    ;; provide a default else clause
-    ((_ bindings then)
-     (if-let* bindings then #f))))
+              else))))
 
 (define-syntax and-let*
   (syntax-rules ()
@@ -50,23 +50,18 @@
  (and-let* ((foo 1) (bar 1)) (+ foo bar) 'foo)       => 'foo
  (and-let* ((foo 1) (bar (= foo 2))) (+ foo bar))    => #f
  )
-
-(define (atom? obj)
-  (not (or (pair? obj)
-           (null? obj))))
-
+
 ;;;; Environment
-(define (e-undefined sym) (error "undefined symbol" sym))
 (define (env-get-box env sym)
   (call/cc
    (lambda (return)
      (map (lambda (frame)
             (map (lambda (binding)
-                   (if (eq (car binding) sym)
-                       (return (cdr binding))))
+                   (and (eq? (car binding) sym)
+                        (return (cdr binding))))
                  frame))
           env)))
-  (e-undefined sym))
+  (error "undefined variable" sym))
 
 (define (env-get env sym)
   (car (env-get-box env sym)))
@@ -84,42 +79,72 @@
   (cons (list (list sym val))
         env))
 
-;;;; Data types
+
+;;;; Types and expression predicates
 (define-record-type rtd/procedure
-  (make-procedure env body args)
-  procedure?
-  (env procedure-env)
-  (body procedure-body)
-  (args procedure-args))
+  (make-proc env body args)
+  proc?
+  (env proc-env)
+  (body proc-body)
+  (args proc-args))
 
+(define (tagged-list? e tag)
+  (and (pair? e) (eq? (car e) tag)))
+
+(define (self-eval? e)
+  (or (number? e)
+      (string? e)))
+
+(define (quoted? e) (tagged-list? e 'quote))
+(define quote-body cdr)
+
+(define (variable? e) (symbol? e))
+
+(define (define? e) (tagged-list? e 'define))
+(define define-symbol cadr)
+(define define-value caddr)
+
+(define (set? e) (tagged-list? e 'set!))
+(define set-symbol cadr)
+(define set-value caddr)
+
+(define (if? e) (tagged-list? e 'if))
+(define if-predicate cadr)
+(define if-then caddr)
+(define if-else cadddr)
+
+(define (lambda? e) (tagged-list? e 'lambda))
+(define lambda-formal cadr)
+(define lambda-body cddr)
+
+(define (begin? e) (tagged-list? e 'begin))
+(define begin-body cdr)
+
+(define (appliation? e) (pair? e))
+(define application-op car)
+(define application-args cdr)
+
 ;;;; Analysis
 (define (analyze-self-eval e)
   (lambda (env) e))
 
 (define (analyze-quoted e)
-  (let ((q (quote e)))
+  (let ((q (quote (quote-body e))))
     (lambda (env) q)))
 
 (define (analyze-variable e)
   (lambda (env) (env-get e)))
 
-(define define-variable cadr)
-(define define-value caddr)
 (define (analyze-define e)
-  (let ((var (define-variable e))
+  (let ((var (define-symbol e))
         (val (analyze (define-value e))))
     (lambda (env) (env-define! env var val))))
 
-(define set-variable cadr)
-(define set-value caddr)
 (define (analyze-set! e)
-  (let ((var (set-variable e))
+  (let ((var (set-symbol e))
         (val (analyze (set-value e))))
     (lambda (env) (env-set! env var val))))
 
-(define if-predicate cadr)
-(define if-then caddr)
-(define if-else cadddr)
 (define (analyze-if e)
   (let ((pred? (analyze (if-predicate e)))
         (then  (analyze (if-then e)))
@@ -127,27 +152,23 @@
     (lambda (env)
       (if (pred? env) (then env) (else env)))))
 
-(define lambda-formal cadr)
-(define lambda-body caddr)
 (define (analyze-lambda e)
   (let ((vars (lambda-formal e))
         (body (analyze-begin (lambda-body e))))
     (lambda (env)
-      (make-procedure env body vars))))
+      (make-proc env body vars))))
 
-(define (e-empty-begin) (error "empty begin"))
 (define (analyze-begin e)
   (define (seq one two)
     (lambda (env) (one env) (two env)))
-  (if (null? e) (e-empty-begin)
+  (if (null? e)
+      (error "empty begin")
       (let lp ((head (car e)) (tail (cdr e)))
         (if (null? tail)
             head
             (lp (seq head (car tail))
                 (cdr tail))))))
 
-(define application-op car)
-(define application-args cdr)
 (define (analyze-application e)
   (let ((proc (analyze (application-op e)))
         (args (map analyze (application-args e))))
@@ -157,55 +178,25 @@
                                      args)))))
 
 (define (execute-application proc args)
-  (cond ((primitive? proc)
+  (cond ((procedure? proc)
          (proc args))
-        ((procedure? proc)
-         (
-          (env-bind))
-         ))
-  )
+        ((proc? proc)
+         ((proc-body proc)
+          (env-extend (proc-vars proc)
+                      args
+                      (proc-env proc))))
+        (else
+         (error "invalid procedure call" proc))))
 
-;;;; Old stuff
-(define (compile-literal env form)
-  (if (null? form)
-      '()
-      (let ((head (car form)))
-        (if (atom? head)
-            (inter-symbol env head (compile-literal env (cdr form)))
-            form))))
-
-(assert
- (compile-literal '() '())
-  => '()
- (compile-literal '() '(foo))
-  => '((foo))
- (compile-literal '() '(foo (bar (baz zup))))
-  => '((foo (bar (baz zup)))))
-
-(define (compile-define env form)
-  )
-
-(define (compile-lambda env form)
-
-  )
-
-(define (compile form env code)
-  (if (null? form)
-      (create-runnable env code)
-      (let ((head (car form))
-            (tail (cdr form)))
-        (cond ((eq 'quote head)
-               (compile-literal tail))
-              ((eq 'define head)
-               (compile-define env tail))
-              ((eq 'define-syntax head)
-               (compile-syntax env tail))
-              ((eq 'lambda head)
-               (compile-lambda tail))
-              ((eq 'if head)
-               (compile-if tail))
-              (else (error "Syntax Error"))))))
-
-(define source0
-  '(begin
-     (lambda (x) x)))
+(define (analyze expr)
+  (cond ((self-eval? expr) (analyze-self-eval expr))
+        ((quoted? expr) (analyze-quoted expr))
+        ((variable? expr) (analyze-variable expr))
+        ((set? expr) (analyze-set! expr))
+        ((define? expr) (analyze-define expr))
+        ((if? expr) (analyze-if expr))
+        ((lambda? expr) (analyze-lambda expr))
+        ((begin? expr) (analyze-begin expr))
+        ((application? expr) (analyze-application expr))
+        (else
+         (error "invalid expresssion" expr))))
