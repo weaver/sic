@@ -181,7 +181,6 @@
 (define (begin? e) (tagged-list? e 'begin))
 (define begin-body cdr)
 
-(define (appliation? e) (pair? e))
 (define application-proc car)
 (define application-args cdr)
 
@@ -195,10 +194,13 @@
  (lambda? '(lambda (x) x))
  (lambda-formals '(lambda (x) x))    => '(x)
  (lambda-body '(lambda (x) x))       => '(x)
+ (lambda-body '(lambda () 1))        => '(1)
  (if? '(if a b c))
  (if-predicate '(if a b c))          => 'a
  (if-then '(if a b c))               => 'b
  (if-else '(if a b c))               => 'c
+ (application-proc '(+ 1 2))         => '+
+ (application-args '(+ 1 2))         => '(1 2)
  )
 
 ;;;; Analysis
@@ -255,13 +257,15 @@
   (let ((proc (analyze (application-proc e)))
         (args (map analyze (application-args e))))
     (lambda (env)
-      (execute-application proc (map (lambda (proc)
-                                       (proc env))
-                                     args)))))
+      (execute-application
+       (proc env)
+       (map (lambda (arg)
+              (arg env))
+            args)))))
 
 (define (execute-application proc args)
   (cond ((procedure? proc)
-         (proc args))
+         (apply proc args))
         ((proc? proc)
          ((proc-body proc)
           (env-extend (proc-syms proc)
@@ -279,6 +283,8 @@
         ((if? expr) (analyze-if expr))
         ((lambda? expr) (analyze-lambda expr))
         ((begin? expr) (analyze-begin expr))
+        ;; primitives
+        ((procedure? expr) (analyze-self-eval expr))
         ((pair? expr) (analyze-application expr))
         (else
          (error "invalid expresssion" expr))))
@@ -319,8 +325,17 @@
    ((analyze-if '(if 1 'foo bar)) ee)            => 'foo
    ((analyze-if '(if #f 'foo bar)) ee)           => 3
    ;; begin
-   ((analyze-begun '(1 2 3)) ee)
-   ((analyze-begun '((set! bar 4) (set! bar 5) bar)) ee)
+   ((analyze-begun '(1)) ee)                     => 1
+   ((analyze-begun '(1 2 3)) ee)                 => 3
+   ((analyze-begun '((set! bar 4) (set! bar 5) bar)) ee)   => 5
+   ;; lambda (just make sure we run make-proc)
+   ((analyze-lambda '(lambda (x y) (+ x y))) ee)
+   ;;
+   ((analyze '+) ee)
+   ((analyze '1) ee)
+   ((analyze '2) ee)
+   ((analyze-application '(+ 1 2)) ee)           => 3
+   ((analyze-application '(= 4 4)) ee)           => #t
    ))
 
 (define (evaluate environment expr)
