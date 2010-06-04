@@ -1,18 +1,24 @@
 ;;;; Analyzing interpreter. See
 ;;;; http://mitpress.mit.edu/sicp/full-text/book/book-Z-H-26.html#%_sec_4.1.7
+;;;; PLT r5rs compatibilty: (namespace-require 'r5rs)
 
 ;;;; Utility
-;; you need srfi-9 from somewhere or another. This is for PLT
-(require (lib "9.ss" "srfi"))
-
 (define-syntax assert
   (syntax-rules (=>)
+    ;; arrow is an infix operator for equal?
     ((_ expr => val)
-     (if (not (equal? expr val))
-         (error "assertion failed" 'expr "=>" 'val)
+     (let ((result expr))
+       (if (not (equal? result val))
+           (error "assertion failed" 'expr '=> result 'not val)
+           #t)))
+    ;; optional arrow and value
+    ((_ expr)
+     (if (not expr)
+         (error "assertion failed" 'expr)
          #t))
-    ((_ e1 => v1 e2 ...)
-     (and (assert e1 => v1) (assert e2 ...)))))
+    ;; recursion with and without the arrow
+    ((_ e1 => v1 e2 ...) (and (assert e1 => v1) (assert e2 ...)))
+    ((_ e1 e2 ...) (and (assert e1) (assert e2 ...)))))
 
 (define-syntax if-let1
   (syntax-rules ()
@@ -52,42 +58,78 @@
  )
 
 ;;;; Environment
-(define (env-get-box env sym)
+(define (box val) (vector val))
+(define (unbox box) (vector-ref box 0))
+(define (set-box! box val) (vector-set! box 0 val))
+
+(define (env-get-box env sym . undefined)
   (call/cc
    (lambda (return)
-     (map (lambda (frame)
-            (map (lambda (binding)
-                   (and (eq? (car binding) sym)
-                        (return (cdr binding))))
-                 frame))
-          env)))
-  (error "undefined variable" sym))
+     (for-each (lambda (frame)
+                 (for-each (lambda (binding)
+                             (and (eq? sym (car binding))
+                                  (return (cdr binding))))
+                           frame))
+               env)
+     (if (null? undefined)
+         (error "undefined variable" sym)
+         (car undefined)))))
 
 (define (env-get env sym)
-  (car (env-get-box env sym)))
+  (unbox (env-get-box env sym)))
 
 (define (env-set! env sym val)
-  (set-car! (env-get-box env sym) val))
+  (set-box! (env-get-box env sym) val))
 
 (define (env-define! env sym val)
-  (if-let* ((box (env-get-box env sym)))
-           (set-car! box val)
-           (set-car! env (cons (list sym val)
+  (if-let* ((cur (env-get-box env sym #f)))
+           (set-box! cur val)
+           (set-car! env (cons (cons sym
+                                     (box val))
                                (car env)))))
 
-(define (env-extend env sym val)
-  (cons (list (list sym val))
+(define (env-extend env bindings values)
+  (cons (map (lambda (sym val)
+               (cons sym (box val)))
+             bindings
+             values)
         env))
 
+(let ((env `(((a . ,(box 1)) (b . ,(box 2))))))
+  (assert
+   (env-get env 'a)                    => 1
+   (env-get env 'b)                    => 2
+   (env-define! env 'c 3)
+   (env-get env 'c)                    => 3
+   (env-set! env 'a 12)
+   (env-get env 'a)                    => 12
+   (set! env (env-extend env '(e f g) '(7 8 9)))
+   (env-get env 'g)                   => 9
+   (env-get env 'a)                   => 12
+   ))
 
 ;;;; Types and expression predicates
-(define-record-type rtd/procedure
-  (make-proc env body args)
-  proc?
-  (env proc-env)
-  (body proc-body)
-  (args proc-args))
 
+;;; eliminate srfi-9, just so we can use this with any scheme for now.
+;;; this is the only runtime data type we're using so far.
+
+;; (define-record-type rtd/proc
+;;   (make-proc env body args)
+;;   proc?
+;;   (env proc-env)
+;;   (body proc-body)
+;;   (args proc-args))
+
+(define (make-proc env body args)
+  (vector make-proc env body args))
+(define (proc? obj)
+  (and (vector? obj)
+       (eq? (vector-ref obj 0) make-proc)))
+(define (proc-env obj) (vector-ref obj 1))
+(define (proc-body obj) (vector-ref obj 2))
+(define (proc-args obj) (vector-ref obj 3))
+
+;;; expression types
 (define (tagged-list? e tag)
   (and (pair? e) (eq? (car e) tag)))
 
@@ -100,6 +142,8 @@
 
 (define (variable? e) (symbol? e))
 
+;;; only (define sym val) for now. I'd prefer to fix this with a
+;;; syntax expansion.
 (define (define? e) (tagged-list? e 'define))
 (define define-symbol cadr)
 (define define-value caddr)
@@ -114,15 +158,25 @@
 (define if-else cadddr)
 
 (define (lambda? e) (tagged-list? e 'lambda))
-(define lambda-formal cadr)
+(define lambda-formals cadr)
 (define lambda-body cddr)
 
 (define (begin? e) (tagged-list? e 'begin))
 (define begin-body cdr)
 
 (define (appliation? e) (pair? e))
-(define application-op car)
+(define application-proc car)
 (define application-args cdr)
+
+(assert
+ (self-eval? '2)
+ (self-eval? "c")
+ (quoted? '(quote f))
+ (quote-body '(quote f))             => '(f)
+ (lambda? '(lambda (x) x))
+ (lambda-formals '(lambda (x) x))    => '(x)
+ (lambda-body '(lambda (x) x))       => '(x)
+ )
 
 ;;;; Analysis
 (define (analyze-self-eval e)
@@ -153,10 +207,10 @@
       (if (pred? env) (then env) (else env)))))
 
 (define (analyze-lambda e)
-  (let ((vars (lambda-formal e))
+  (let ((syms (lambda-formals e))
         (body (analyze-begin (lambda-body e))))
     (lambda (env)
-      (make-proc env body vars))))
+      (make-proc env body syms))))
 
 (define (analyze-begin e)
   (define (seq one two)
@@ -170,7 +224,7 @@
                 (cdr tail))))))
 
 (define (analyze-application e)
-  (let ((proc (analyze (application-op e)))
+  (let ((proc (analyze (application-proc e)))
         (args (map analyze (application-args e))))
     (lambda (env)
       (execute-application proc (map (lambda (proc)
@@ -182,7 +236,7 @@
          (proc args))
         ((proc? proc)
          ((proc-body proc)
-          (env-extend (proc-vars proc)
+          (env-extend (proc-syms proc)
                       args
                       (proc-env proc))))
         (else
