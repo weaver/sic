@@ -173,9 +173,16 @@
  (self-eval? "c")
  (quoted? '(quote f))
  (quote-body '(quote f))             => '(f)
+ (define? '(define a '(b)))
+ (define-symbol '(define a (b)))     => 'a
+ (define-value '(define a (b)))      => '(b)
  (lambda? '(lambda (x) x))
  (lambda-formals '(lambda (x) x))    => '(x)
  (lambda-body '(lambda (x) x))       => '(x)
+ (if? '(if a b c))
+ (if-predicate '(if a b c))          => 'a
+ (if-then '(if a b c))               => 'b
+ (if-else '(if a b c))               => 'c
  )
 
 ;;;; Analysis
