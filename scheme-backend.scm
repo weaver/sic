@@ -39,24 +39,6 @@
               (if-let* (b2 ...) then else)
               else))))
 
-(define-syntax and-let*
-  (syntax-rules ()
-    ((_ bindings body ...)
-     (if-let* bindings (begin body ...)))))
-
-;; (define (foldr proc nil lst)
-;;   (if (null? lst)
-;;       nil
-;;       (proc (car lst)
-;;             (foldr proc nil (cdr lst)))))
-
-;; (define (foldl proc nil lst)
-;;   (if (null? lst)
-;;       nil
-;;       (foldl proc
-;;              (proc (car lst) nil)
-;;              (cdr lst))))
-
 (assert
  (if-let1 ((#f)) 1 2)             => 2
  (if-let1 ((foo 1)) foo 2)        => 1
@@ -65,11 +47,6 @@
  (if-let* ((foo 1) (bar 1)) (+ foo bar) #f)          => 2
  (if-let* ((foo 1) (bar (= foo 2))) (+ foo bar) #f)  => #f
  (if-let* ((foo 1) (bar (= foo 2))) (+ foo bar))     => #f
- (and-let* ((foo 1) (bar 1)) (+ foo bar))            => 2
- (and-let* ((foo 1) (bar 1)) (+ foo bar) 'foo)       => 'foo
- (and-let* ((foo 1) (bar (= foo 2))) (+ foo bar))    => #f
- ;; (foldr cons '() '(1 2 3))                           => '(1 2 3)
- ;; (foldl cons '() '(1 2 3))                           => '(3 2 1)
  )
 
 ;;;; Environment
@@ -330,7 +307,7 @@
    ((analyze-begun '((set! bar 4) (set! bar 5) bar)) ee)   => 5
    ;; lambda (just make sure we run make-proc)
    ((analyze-lambda '(lambda (x y) (+ x y))) ee)
-   ;;
+   ;; application
    ((analyze '+) ee)
    ((analyze '1) ee)
    ((analyze '2) ee)
