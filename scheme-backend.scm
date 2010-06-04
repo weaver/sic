@@ -44,6 +44,19 @@
     ((_ bindings body ...)
      (if-let* bindings (begin body ...)))))
 
+;; (define (foldr proc nil lst)
+;;   (if (null? lst)
+;;       nil
+;;       (proc (car lst)
+;;             (foldr proc nil (cdr lst)))))
+
+;; (define (foldl proc nil lst)
+;;   (if (null? lst)
+;;       nil
+;;       (foldl proc
+;;              (proc (car lst) nil)
+;;              (cdr lst))))
+
 (assert
  (if-let1 ((#f)) 1 2)             => 2
  (if-let1 ((foo 1)) foo 2)        => 1
@@ -55,6 +68,8 @@
  (and-let* ((foo 1) (bar 1)) (+ foo bar))            => 2
  (and-let* ((foo 1) (bar 1)) (+ foo bar) 'foo)       => 'foo
  (and-let* ((foo 1) (bar (= foo 2))) (+ foo bar))    => #f
+ ;; (foldr cons '() '(1 2 3))                           => '(1 2 3)
+ ;; (foldl cons '() '(1 2 3))                           => '(3 2 1)
  )
 
 ;;;; Environment
@@ -95,7 +110,8 @@
              values)
         env))
 
-(let ((env `(((a . ,(box 1)) (b . ,(box 2))))))
+(let ()
+  (define env `(((a . ,(box 1)) (b . ,(box 2)))))
   (assert
    (env-get env 'a)                    => 1
    (env-get env 'b)                    => 2
@@ -134,11 +150,12 @@
   (and (pair? e) (eq? (car e) tag)))
 
 (define (self-eval? e)
-  (or (number? e)
+  (or (boolean? e)
+      (number? e)
       (string? e)))
 
 (define (quoted? e) (tagged-list? e 'quote))
-(define quote-body cdr)
+(define quote-body cadr)
 
 (define (variable? e) (symbol? e))
 
@@ -169,10 +186,9 @@
 (define application-args cdr)
 
 (assert
- (self-eval? '2)
- (self-eval? "c")
+ (and (self-eval? '2) (self-eval? "c") (self-eval? #t))
  (quoted? '(quote f))
- (quote-body '(quote f))             => '(f)
+ (quote-body '(quote f))             => 'f
  (define? '(define a '(b)))
  (define-symbol '(define a (b)))     => 'a
  (define-value '(define a (b)))      => '(b)
@@ -190,21 +206,21 @@
   (lambda (env) e))
 
 (define (analyze-quoted e)
-  (let ((q (quote (quote-body e))))
+  (let ((q (quote-body e)))
     (lambda (env) q)))
 
 (define (analyze-variable e)
-  (lambda (env) (env-get e)))
+  (lambda (env) (env-get env e)))
 
 (define (analyze-define e)
   (let ((var (define-symbol e))
         (val (analyze (define-value e))))
-    (lambda (env) (env-define! env var val))))
+    (lambda (env) (env-define! env var (val env)))))
 
 (define (analyze-set! e)
   (let ((var (set-symbol e))
         (val (analyze (set-value e))))
-    (lambda (env) (env-set! env var val))))
+    (lambda (env) (env-set! env var (val env)))))
 
 (define (analyze-if e)
   (let ((pred? (analyze (if-predicate e)))
@@ -215,20 +231,25 @@
 
 (define (analyze-lambda e)
   (let ((syms (lambda-formals e))
-        (body (analyze-begin (lambda-body e))))
+        (body (analyze-begun (lambda-body e))))
     (lambda (env)
       (make-proc env body syms))))
 
 (define (analyze-begin e)
-  (define (seq one two)
-    (lambda (env) (one env) (two env)))
-  (if (null? e)
-      (error "empty begin")
-      (let lp ((head (car e)) (tail (cdr e)))
-        (if (null? tail)
-            head
-            (lp (seq head (car tail))
-                (cdr tail))))))
+  (analyze-begun (begin-body e)))
+
+(define (analyze-begun exprs)
+  (define (seq e1 e2)
+    (lambda (env) (e1 env) (e2 env)))
+  (define (lp head tail)
+    (if (null? tail)
+        head
+        (lp (seq head (car tail))
+            (cdr tail))))
+  (if (null? exprs)
+      (error "empty body")
+      (lp (analyze (car exprs))
+          (map analyze (cdr exprs)))))
 
 (define (analyze-application e)
   (let ((proc (analyze (application-proc e)))
@@ -258,6 +279,53 @@
         ((if? expr) (analyze-if expr))
         ((lambda? expr) (analyze-lambda expr))
         ((begin? expr) (analyze-begin expr))
-        ((application? expr) (analyze-application expr))
+        ((pair? expr) (analyze-application expr))
         (else
          (error "invalid expresssion" expr))))
+
+;;;; Primitive environment
+(define (make-environment alist)
+  (list
+   (map (lambda (pair)
+          (cons (car pair) (box (cdr pair))))
+        alist)))
+
+(define scheme-report-environment-sic
+  (make-environment
+    `((cons       . ,cons)
+      (car        . ,car)
+      (cdr        . ,cdr)
+      (+          . ,+)
+      (=          . ,=)
+      )))
+
+;;;; Tests of the analysis and evaluation
+(let ()
+  (define ee (append (make-environment `((foo . 1) (bar . 2)))
+                     scheme-report-environment-sic))
+  (assert
+   ;; sanity check
+   ((analyze-self-eval 2) ee)                    => 2
+   ((analyze-quoted '(quote foo)) ee)            => 'foo
+   ;; variables
+   ((analyze-variable 'foo) ee)                  => 1
+   ((analyze-variable 'cdr) ee)                  => cdr
+   ((analyze-set! '(set! bar 3)) ee)
+   ((analyze-variable 'bar) ee)                  => 3
+   ((analyze-define '(define baz 4)) ee)
+   ((analyze-variable 'baz) ee)                  => 4
+   ;; if
+   ((analyze-if '(if 1 foo bar)) ee)             => 1
+   ((analyze-if '(if 1 'foo bar)) ee)            => 'foo
+   ((analyze-if '(if #f 'foo bar)) ee)           => 3
+   ;; begin
+   ((analyze-begun '(1 2 3)) ee)
+   ((analyze-begun '((set! bar 4) (set! bar 5) bar)) ee)
+   ))
+
+(define (evaluate environment expr)
+  (let ((program (analyze-begun expr)))
+    (program environment)))
+
+(define (sic expr)
+  (evaluate scheme-report-environment-sic expr))
