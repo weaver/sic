@@ -268,9 +268,9 @@
          (apply proc args))
         ((proc? proc)
          ((proc-body proc)
-          (env-extend (proc-syms proc)
-                      args
-                      (proc-env proc))))
+          (env-extend (proc-env proc)
+                      (proc-args proc)
+                      args)))
         (else
          (error "invalid procedure call" proc))))
 
@@ -344,3 +344,14 @@
 
 (define (sic expr)
   (evaluate scheme-report-environment-sic expr))
+
+(assert
+ (sic
+  '((define foo 1)
+    (define bar 2)
+    (define add
+      (lambda (x y)
+        (+ x y)))
+    (add foo bar)))
+ => 3
+ )
