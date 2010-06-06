@@ -55,7 +55,7 @@
 (define (set-box! box val) (vector-set! box 0 val))
 
 (define (env-get-box env sym . undefined)
-  (call/cc
+  (call-with-current-continuation
    (lambda (return)
      (for-each (lambda (frame)
                  (for-each (lambda (binding)
