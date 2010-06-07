@@ -50,22 +50,31 @@
  )
 
 ;;;; Environment
-(define (box val) (vector val))
-(define (unbox box) (vector-ref box 0))
-(define (set-box! box val) (vector-set! box 0 val))
+;; Boxes have actually been eliminated now, so box is simply
+;; identity. Instead of a separate value box, we return the binding
+;; pair with its name, and set-cdr! on the pair.
+(define (box val) val)
+(define (unbox box) (cdr box))
+(define (set-box! box val) (set-cdr! box val))
+
+(define (env-get-box-in-frame frame sym)
+  (let lp ((frame frame))
+    (if (null? frame)
+        #f
+        (let ((binding (car frame)))
+          (if (eq? sym (car binding))
+              binding
+              (lp (cdr frame)))))))
 
 (define (env-get-box env sym . undefined)
-  (call/cc
-   (lambda (return)
-     (for-each (lambda (frame)
-                 (for-each (lambda (binding)
-                             (and (eq? sym (car binding))
-                                  (return (cdr binding))))
-                           frame))
-               env)
-     (if (null? undefined)
-         (error "undefined variable" sym)
-         (car undefined)))))
+  (let lp ((env env))
+    (if (null? env)
+        (if (null? undefined)
+            (error "undefined variable" sym)
+            (car undefined))
+        (if-let* ((box (env-get-box-in-frame (car env) sym)))
+                 box
+                 (lp (cdr env))))))
 
 (define (env-get env sym)
   (unbox (env-get-box env sym)))
@@ -74,7 +83,7 @@
   (set-box! (env-get-box env sym) val))
 
 (define (env-define! env sym val)
-  (if-let* ((cur (env-get-box env sym #f)))
+  (if-let* ((cur (env-get-box-in-frame (car env) sym)))
            (set-box! cur val)
            (set-car! env (cons (cons sym
                                      (box val))
@@ -100,6 +109,18 @@
    (env-get env 'g)                   => 9
    (env-get env 'a)                   => 12
    ))
+
+(let ()
+  ;; The initial environment is two frames. The first with `a' bound
+  ;; to `1', and the second with `b' bound to `2'. Using env-define!
+  ;; should only search the first frame for a binding.
+ (define (inspect-env env) env)
+ (define env `(((a . ,(box 1))) ((b . ,(box 2)))))
+ (assert
+  (inspect-env env) => '(((a . 1)) ((b . 2)))
+  (env-define! env 'b 3)
+  (inspect-env env) => '(((b . 3) (a . 1)) ((b . 2)))
+  ))
 
 ;;;; Types and expression predicates
 
