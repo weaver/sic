@@ -201,46 +201,84 @@
  (application-args '(+ 1 2))         => '(1 2)
  )
 
+;;;; Dynamic
+(define-syntax kambda
+  (syntax-rules ()
+    ((_ k formal body ...)
+     (cons (lambda formal body ...)
+           k))))
+
+(define (return k val)
+  ((car k) (cdr k) val))
+
+(define (make-prompt tag)
+  (vector 'prompt tag))
+
+(define (prompt? obj)
+  (and (vector? obj) (eq? (vector-ref obj 0) 'prompt)))
+
+(define (prompt-tag prompt)
+  (vector-ref prompt 1))
+
+(define (prompt k tag)
+  (cons (make-prompt tag)
+        k))
+
+(define (abort k tag)
+  (let lp ((k k))
+    (if (null? k)
+        (error "end of continuation stack")
+        (if (and (prompt? k) (eq? (prompt-tag k) tag))
+            k
+            (lp (cdr k))))))
+
 ;;;; Analysis
 (define (analyze-self-eval e)
-  (lambda (env) e))
+  (lambda (env k) (return k e)))
 
 (define (analyze-quoted e)
   (let ((q (quote-body e)))
-    (lambda (env) q)))
+    (lambda (env k) (return k q))))
 
 (define (analyze-variable e)
-  (lambda (env) (env-get env e)))
+  (lambda (env k)
+    (return k (env-get env e))))
 
 (define (analyze-define e)
   (let ((var (define-symbol e))
         (val (analyze (define-value e))))
-    (lambda (env) (env-define! env var (val env)))))
+    (lambda (env k)
+      (env-define! env var (val env))
+      (return k unspecified))))
 
 (define (analyze-set! e)
   (let ((var (set-symbol e))
         (val (analyze (set-value e))))
-    (lambda (env) (env-set! env var (val env)))))
+    (lambda (env k)
+      (env-set! env var (val env))
+      (return k unspecified))))
 
 (define (analyze-if e)
   (let ((pred? (analyze (if-predicate e)))
         (then  (analyze (if-then e)))
         (else  (analyze (if-else e))))
-    (lambda (env)
-      (if (pred? env) (then env) (else env)))))
+    (lambda (env k)
+      (pred? env
+             (kambda k (v)
+               (if v (then env k) (else env k)))))))
 
 (define (analyze-lambda e)
   (let ((syms (lambda-formals e))
         (body (analyze-begun (lambda-body e))))
-    (lambda (env)
-      (make-proc env body syms))))
+    (lambda (env k)
+      (return k (make-proc env body syms)))))
 
 (define (analyze-begin e)
   (analyze-begun (begin-body e)))
 
 (define (analyze-begun exprs)
   (define (seq e1 e2)
-    (lambda (env) (e1 env) (e2 env)))
+    (lambda (env) (e1 env) (return env (e2 env))))
   (define (lp head tail)
     (if (null? tail)
         head
@@ -253,22 +291,53 @@
 
 (define (analyze-application e)
   (let ((proc (analyze (application-proc e)))
-        (args (map analyze (application-args e))))
-    (lambda (env)
+        (args ;; (map analyze (application-args e))
+         (fold (lambda (arg acc)
+                 (let ((arg (analyze arg)))
+                   (lambda (env k)
+                     (kambda acc (v)
+                       (cons v)
+                       )
+
+                     (acc env
+                          (consk (lambda (v)
+                                   (cons v )
+                                   (return k v))
+                                 k)))))
+               '()
+               (application-args e))))
+    (lambda (env k)
+      (args env
+            (kambda k (v)
+
+                    )
+
+            (consk (lambda (v)
+                     (execute-application
+                      k
+                      (proc env k)
+                      )
+
+                     )))
+
       (execute-application
+       k
        (proc env)
        (map (lambda (arg)
-              (arg env))
+              (return-value
+               (return-slot env (arg env)))) ; FIXME cps each one?
             args)))))
 
-(define (execute-application proc args)
+(define (execute-application k proc args)
   (cond ((procedure? proc)
-         (apply proc args))
+         (return env (apply proc args)))
         ((proc? proc)
          ((proc-body proc)
-          (env-extend (proc-env proc)
+          (env-extend (env-dyn env)
+                      (proc-env proc)
                       (proc-args proc)
-                      args)))
+                      args)
+          (consk (lambda (v) (return env v)) k)))
         (else
          (error "invalid procedure call" proc))))
 
@@ -337,8 +406,8 @@
    ))
 
 (define (evaluate environment expr)
-  (let ((program (analyze-begun expr)))
-    (program environment)))
+  (return-value
+   ((analyze-begun expr) environment)))
 
 (define (sic expr)
   (evaluate scheme-report-environment-sic expr))
