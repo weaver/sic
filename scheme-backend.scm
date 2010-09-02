@@ -291,42 +291,22 @@
 
 (define (analyze-application e)
   (let ((proc (analyze (application-proc e)))
-        (args ;; (map analyze (application-args e))
-         (fold (lambda (arg acc)
-                 (let ((arg (analyze arg)))
-                   (lambda (env k)
-                     (kambda acc (v)
-                       (cons v)
-                       )
-
-                     (acc env
-                          (consk (lambda (v)
-                                   (cons v )
-                                   (return k v))
-                                 k)))))
-               '()
-               (application-args e))))
+        (args (fold (lambda (arg cps)
+                      (lambda (env k)
+                        (arg env
+                             (lambda (argv)
+                               (cps env
+                                    (lambda (cpsv)
+                                      (k (cons argv cpsv))))))))
+                    (lambda (env k) (k '()))
+                    (map analyze (application-args e)))))
     (lambda (env k)
       (args env
-            (kambda k (v)
-
-                    )
-
-            (consk (lambda (v)
-                     (execute-application
-                      k
-                      (proc env k)
-                      )
-
-                     )))
-
-      (execute-application
-       k
-       (proc env)
-       (map (lambda (arg)
-              (return-value
-               (return-slot env (arg env)))) ; FIXME cps each one?
-            args)))))
+            (lambda (args)
+              (execute-application
+               k
+               (proc env)
+               args))))))
 
 (define (execute-application k proc args)
   (cond ((procedure? proc)
