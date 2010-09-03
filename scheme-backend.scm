@@ -57,6 +57,9 @@
  )
 
 ;;;; Environment
+(define unspecified "Unspecified Value")
+(define error raise)
+
 ;; Boxes have actually been eliminated now, so box is simply
 ;; identity. Instead of a separate value box, we return the binding
 ;; pair with its name, and set-cdr! on the pair.
@@ -209,11 +212,8 @@
  )
 
 ;;;; Dynamic
-(define-syntax kambda
-  (syntax-rules (=>)
-    ((_ k formal => self body ...)
-     (let ((self (kambda k formal body ...)))
-       self))
+(define-syntax cont
+  (syntax-rules ()
     ((_ k formal body ...)
      (cons (lambda formal body ...)
            k))))
@@ -258,15 +258,19 @@
   (let ((var (define-symbol e))
         (val (analyze (define-value e))))
     (lambda (env k)
-      (env-define! env var (val env))
-      (return k unspecified))))
+      (val env
+           (cont k (k v)
+             (env-define! env var v)
+             (return k unspecified))))))
 
 (define (analyze-set! e)
   (let ((var (set-symbol e))
         (val (analyze (set-value e))))
     (lambda (env k)
-      (env-set! env var (val env))
-      (return k unspecified))))
+      (val env
+           (cont k (k v)
+             (env-set! env var v)
+             (return k unspecified))))))
 
 (define (analyze-if e)
   (let ((pred? (analyze (if-predicate e)))
@@ -274,7 +278,7 @@
         (else  (analyze (if-else e))))
     (lambda (env k)
       (pred? env
-             (kambda k (k v)
+             (cont k (k v)
                (if v (then env k) (else env k)))))))
 
 (define (analyze-lambda e)
@@ -286,9 +290,19 @@
 (define (analyze-begin e)
   (analyze-begun (begin-body e)))
 
+(define-syntax sequence
+  (syntax-rules ()
+    ((_ name (k v1 v2) body ...)
+     (lambda (e1 e2)
+       (lambda (env k)
+         (e1 env
+             (cont k (k v1)
+               (e2 env
+                   (cont k (k v2)
+                     body ...)))))))))
+
 (define (analyze-begun exprs)
-  (define (seq e1 e2)
-    (lambda (env) (e1 env) (return env (e2 env))))
+  (define seq (sequence (k v1 v2) (return k v2)))
   (define (lp head tail)
     (if (null? tail)
         head
@@ -299,16 +313,11 @@
       (lp (analyze (car exprs))
           (map analyze (cdr exprs)))))
 
+(define debug debug-message)
+
 (define (analyze-application e)
   (let ((proc (analyze (application-proc e)))
-        (args (foldr (lambda (arg cps)
-                       (lambda (env k)
-                         (arg env
-                              (kambda k (k argv)
-                                => k2
-                                (cps env
-                                     (kambda k2 (cpsv)
-                                       (return k2 (cons argv cpsv))))))))
+        (args (foldr (sequence (k v1 v2) (return k (cons v1 v2)))
                      (lambda (env k) (return k '()))
                      (map analyze (application-args e)))))
     (lambda (env k)
@@ -324,11 +333,10 @@
          (return env (apply proc args)))
         ((proc? proc)
          ((proc-body proc)
-          (env-extend (env-dyn env)
-                      (proc-env proc)
+          (env-extend (proc-env proc)
                       (proc-args proc)
                       args)
-          (kambda k (k v) (return k v))))
+          (cont k (k v) (return k v))))
         (else
          (error "invalid procedure call" proc))))
 
@@ -349,6 +357,7 @@
 
 ;;;; Primitive environment
 (define (make-environment alist)
+  ;; this just returns the alist now, since box is identity.
   (list
    (map (lambda (pair)
           (cons (car pair) (box (cdr pair))))
@@ -364,48 +373,49 @@
       )))
 
 ;;;; Tests of the analysis and evaluation
-(let ((value #f))
+(let ()
   (define ee (append (make-environment `((foo . 1) (bar . 2)))
-                     scheme-report-environment-sic))
-  (define kk (list (lambda (v) (set! value v))))
-  (assert
+                    scheme-report-environment-sic))
+  (define value #f)
+  (define kk (list (lambda (k v) (set! value v) value)))
+
    ;; sanity check
+  (assert
    ((analyze-self-eval 2) ee kk)                    => 2
    ((analyze-quoted '(quote foo)) ee kk)            => 'foo
-  )
+   )
   ;; variables
-  ;; (assert
-  ;;  ((analyze-variable 'foo) ee kk)                  => 1
-  ;;  ((analyze-variable 'cdr) ee kk)                  => cdr
-  ;;  ((analyze-set! '(set! bar 3)) ee kk)
-  ;;  ((analyze-variable 'bar) ee kk)                  => 3
-  ;;  ((analyze-define '(define baz 4)) ee kk)
-  ;;  ((analyze-variable 'baz) ee kk)                  => 4
-  ;;  )
+  (assert
+   ((analyze-variable 'foo) ee kk)                  => 1
+   ((analyze-variable 'cdr) ee kk)                  => cdr
+   ((analyze-set! '(set! bar 3)) ee kk)
+   ((analyze-variable 'bar) ee kk)                  => 3
+   ((analyze-define '(define baz 4)) ee kk)
+   ((analyze-variable 'baz) ee kk)                  => 4
+   )
   ;; ;; if
-  ;; (assert
-  ;;  ((analyze-if '(if 1 foo bar)) ee kk)             => 1
-  ;;  ((analyze-if '(if 1 'foo bar)) ee kk)            => 'foo
-  ;;  ((analyze-if '(if #f 'foo bar)) ee kk)           => 3
-  ;;  )
+  (assert
+   ((analyze-if '(if 1 foo bar)) ee kk)             => 1
+   ((analyze-if '(if 1 'foo bar)) ee kk)            => 'foo
+   ((analyze-if '(if #f 'foo bar)) ee kk)           => 3
+   )
   ;; ;; begin
-  ;; (assert
-  ;;  ((analyze-begun '(1)) ee kk)                     => 1
-  ;;  ((analyze-begun '(1 2 3)) ee kk)                 => 3
-  ;;  ((analyze-begun '((set! bar 4) (set! bar 5) bar)) ee kk)   => 5
-  ;;  )
+  (assert
+   ((analyze-begun '(1)) ee kk)                     => 1
+   ((analyze-begun '(1 2 3)) ee kk)                 => 3
+   ((analyze-begun '((set! bar 4) (set! bar 5) bar)) ee kk)   => 5
+   )
   ;; ;; lambda (just make sure we run make-proc)
-  ;; (assert
-  ;;  ((analyze-lambda '(lambda (x y) (+ x y))) ee kk)
-  ;;  )
+  (assert
+   ((analyze-lambda '(lambda (x y) (+ x y))) ee kk))
   ;; ;; application
-  ;; (assert
-  ;;  ((analyze '+) ee kk)
-  ;;  ((analyze '1) ee kk)
-  ;;  ((analyze '2) ee kk)
-  ;;  ((analyze-application '(+ 1 2)) ee kk)           => 3
-  ;;  ((analyze-application '(= 4 4)) ee kk)           => #t
-  ;;  )
+  (assert
+   ((analyze '+) ee kk)
+   ((analyze '1) ee kk)
+   ((analyze '2) ee kk)
+   ((analyze-application '(+ 1 2)) ee kk)           => 3
+   ((analyze-application '(= 4 4)) ee kk)           => #t
+   )
   )
 
 (define (evaluate environment expr)
