@@ -290,23 +290,19 @@
 (define (analyze-begin e)
   (analyze-begun (begin-body e)))
 
-(define-syntax sequence
-  (syntax-rules ()
-    ((_ name (k v1 v2) body ...)
-     (lambda (e1 e2)
-       (lambda (env k)
-         (e1 env
-             (cont k (k v1)
-               (e2 env
-                   (cont k (k v2)
-                     body ...)))))))))
+(define (sequence-begin e1 e2)
+  (lambda (env k)
+    (e1 env
+        (cont k (k v1)
+          (e2 env
+              (cont k (k v2)
+                (return k v2)))))))
 
 (define (analyze-begun exprs)
-  (define seq (sequence (k v1 v2) (return k v2)))
   (define (lp head tail)
     (if (null? tail)
         head
-        (lp (seq head (car tail))
+        (lp (sequence-begin head (car tail))
             (cdr tail))))
   (if (null? exprs)
       (error "empty body")
@@ -315,22 +311,32 @@
 
 (define debug debug-message)
 
+(define (sequence-apply e1 e2)
+  (lambda (env k)
+    (e1 env
+        (cont k (k v1)
+          (e2 env
+              (cont k (k v2)
+                (return k (cons v1 v2))))))))
+
+(define (null-expression env k)
+  (return k '()))
+
 (define (analyze-application e)
   (let ((proc (analyze (application-proc e)))
-        (args (foldr (sequence (k v1 v2) (return k (cons v1 v2)))
-                     (lambda (env k) (return k '()))
+        (args (foldr sequence-apply
+                     null-expression
                      (map analyze (application-args e)))))
     (lambda (env k)
       (args env
-            (lambda (args)
-              (execute-application
-               k
-               (proc env)
-               args))))))
+            (cont k (k args)
+              (proc env
+                    (cont k (k proc)
+                      (execute-application k proc args))))))))
 
 (define (execute-application k proc args)
   (cond ((procedure? proc)
-         (return env (apply proc args)))
+         (return k (apply proc args)))
         ((proc? proc)
          ((proc-body proc)
           (env-extend (proc-env proc)
@@ -418,15 +424,16 @@
    )
   )
 
-(define (evaluate environment expr)
+(define (evaluate expr environment)
   (let ((value #f))
-    ((analyze-begun expr) environment
-                          (lambda (v)
-                            (set! value v)))
+    ((analyze-begun expr)
+     environment
+     (list (lambda (k v)
+             (set! value v))))
     value))
 
 (define (sic expr)
-  (evaluate scheme-report-environment-sic expr))
+  (evaluate expr scheme-report-environment-sic))
 
 (assert
  (sic
