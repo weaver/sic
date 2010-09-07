@@ -290,13 +290,18 @@
 (define (analyze-begin e)
   (analyze-begun (begin-body e)))
 
-(define (sequence-begin e1 e2)
-  (lambda (env k)
-    (e1 env
-        (cont k (k v1)
-          (e2 env
-              (cont k (k v2)
-                (return k v2)))))))
+(define (make-sequence handler)
+  (lambda (e1 e2)
+    (lambda (env k)
+      (e1 env
+          (cont k (k v1)
+            (e2 env
+                (cont k (k v2)
+                  (handler k v1 v2))))))))
+
+(define sequence-begin
+  (make-sequence (lambda (k v1 v2)
+                   (return k v2))))
 
 (define (analyze-begun exprs)
   (define (lp head tail)
@@ -311,13 +316,9 @@
 
 (define debug debug-message)
 
-(define (sequence-apply e1 e2)
-  (lambda (env k)
-    (e1 env
-        (cont k (k v1)
-          (e2 env
-              (cont k (k v2)
-                (return k (cons v1 v2))))))))
+(define sequence-apply
+  (make-sequence (lambda (k v1 v2)
+                   (return k (cons v1 v2)))))
 
 (define (null-expression env k)
   (return k '()))
