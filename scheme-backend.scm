@@ -189,6 +189,18 @@
 (define (begin? e) (tagged-list? e 'begin))
 (define begin-body cdr)
 
+(define (prompt? e) (tagged-list? e 'prompt*))
+(define (prompt-tag e) cadr)
+(define (prompt-thunk e) caddr)
+
+(define (abort? e) (tagged-list? e 'abort*))
+(define (abort-tag e) cadr)
+(define (abort-thunk e) caddr)
+
+(define (capture? e) (tagged-list? e 'capture*))
+(define (capture-tag e) cadr)
+(define (capture-proc e) caddr)
+
 (define application-proc car)
 (define application-args cdr)
 
@@ -219,28 +231,19 @@
            k))))
 
 (define (return k val)
-  ((car k) (cdr k) val))
+  (let ((next (car k)))
+    (if (prompt-obj? k)
+        (return (cdr k) val)
+        (next (cdr k) val))))
 
 (define (make-prompt tag)
   (vector 'prompt tag))
 
-(define (prompt? obj)
+(define (prompt-obj? obj)
   (and (vector? obj) (eq? (vector-ref obj 0) 'prompt)))
 
-(define (prompt-tag prompt)
-  (vector-ref prompt 1))
-
-(define (prompt k tag)
-  (cons (make-prompt tag)
-        k))
-
-(define (abort k tag)
-  (let lp ((k k))
-    (if (null? k)
-        (error "end of continuation stack")
-        (if (and (prompt? k) (eq? (prompt-tag k) tag))
-            k
-            (lp (cdr k))))))
+(define (prompt-match? prompt tag)
+  (and (prompt-obj? prompt) (eq? tag (vector-ref prompt 1))))
 
 ;;;; Analysis
 (define (analyze-self-eval e)
@@ -271,6 +274,52 @@
            (cont k (k v)
              (env-set! env var v)
              (return k unspecified))))))
+
+(define (analyze-prompt e)
+  (let ((tag (analyze (prompt-tag e)))
+        (thunk (analyze (prompt-thunk e))))
+    (lambda (env k)
+      (tag env
+           (cont k (k tag)
+             (thunk env
+                    (cons (make-prompt tag)
+                          k)))))))
+
+(define (analyze-abort e)
+  (define (search k tag)
+    (let lp ((k k))
+      (if (null? k)
+          (error "end of continuation stack")
+          (let ((head (car k)))
+            (if (prompt-match? head tag)
+                k
+                (lp (cdr k)))))))
+  (let ((tag (analyze (abort-tag e)))
+        (thunk (analyze (abort-thunk e))))
+    (lambda (env k)
+      (tag env
+           (cont k (k tag)
+             (thunk env
+                    (search k tag)))))))
+
+(define (analyze-capture e)
+  (define (search k tag)
+    (let lp ((k k) (cap '()))
+      (if (null? k)
+          (error "end of continuation stack")
+          (let ((head (car k)))
+            (if (prompt-match? head tag)
+                cap
+                (lp (cdr k) (cons head cap)))))))
+  (let ((tag (analyze (capture-tag e)))
+        (proc (analyze (capture-proc e))))
+    (lambda (env k)
+      (tag env
+           (cont k (k tag)
+             (execute-application
+              k
+              proc
+              (list (search k tag))))))))
 
 (define (analyze-if e)
   (let ((pred? (analyze (if-predicate e)))
