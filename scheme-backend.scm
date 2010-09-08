@@ -1,6 +1,7 @@
 ;;;; Analyzing interpreter. See
 ;;;; http://mitpress.mit.edu/sicp/full-text/book/book-Z-H-26.html#%_sec_4.1.7
 ;;;; PLT r5rs compatibilty: (namespace-require 'r5rs)
+;;;; Scheme48 compatibilty: ,open define-record-types
 
 ;;;; Utility
 (define-syntax assert
@@ -39,11 +40,14 @@
               (if-let* (b2 ...) then else)
               else))))
 
-(define (foldr proc nil lst)
+(define (foldr* proc nil lst car cdr null?)
   (if (null? lst)
       nil
       (proc (car lst)
-            (foldr proc nil (cdr lst)))))
+            (foldr* proc nil (cdr lst) car cdr null?))))
+
+(define (foldr proc nil lst)
+  (foldr* proc nil lst car cdr null?))
 
 (assert
  (if-let1 ((#f)) 1 2)             => 2
@@ -70,31 +74,48 @@
   (apply debug "error" args)
   (cdr 'error))
 
-;; Boxes have actually been eliminated now, so box is simply
-;; identity. Instead of a separate value box, we return the binding
-;; pair with its name, and set-cdr! on the pair.
-(define (box val) val)
-(define (unbox box) (cdr box))
-(define (set-box! box val) (set-cdr! box val))
+(define-record-type binding rtd/binding
+  (bind sym val)
+  binding?
+  (sym bound)
+  (val unbox set-box!))
+
+(define-record-type frame rtd/frame
+  (frame-cons car cdr)
+  frame?
+  (car binding1)
+  (cdr frame-cdr))
+
+(define (frame-null) frame-null)
+(define (frame-null? obj) (eq? obj frame-null))
+
+(define-record-type environment rtd/environment
+  (env-cons car cdr)
+  env?
+  (car frame1 set-frame1!)
+  (cdr env-cdr))
+
+(define (env-null) env-null)
+(define (env-null? obj) (eq? obj env-null))
 
 (define (env-get-box-in-frame frame sym)
   (let lp ((frame frame))
-    (if (null? frame)
+    (if (frame-null? frame)
         #f
-        (let ((binding (car frame)))
-          (if (eq? sym (car binding))
+        (let ((binding (binding1 frame)))
+          (if (eq? sym (bound binding))
               binding
-              (lp (cdr frame)))))))
+              (lp (frame-cdr frame)))))))
 
 (define (env-get-box env sym . undefined)
   (let lp ((env env))
-    (if (null? env)
+    (if (env-null? env)
         (if (null? undefined)
             (error "undefined variable" sym)
             (car undefined))
-        (if-let* ((box (env-get-box-in-frame (car env) sym)))
+        (if-let* ((box (env-get-box-in-frame (frame1 env) sym)))
                  box
-                 (lp (cdr env))))))
+                 (lp (env-cdr env))))))
 
 (define (env-get env sym)
   (unbox (env-get-box env sym)))
@@ -103,21 +124,47 @@
   (set-box! (env-get-box env sym) val))
 
 (define (env-define! env sym val)
-  (if-let* ((cur (env-get-box-in-frame (car env) sym)))
+  (if-let* ((cur (env-get-box-in-frame (frame1 env) sym)))
            (set-box! cur val)
-           (set-car! env (cons (cons sym
-                                     (box val))
-                               (car env)))))
+           (set-frame1! env (frame-cons (bind sym val) (frame1 env)))))
 
 (define (env-extend env bindings values)
-  (cons (map (lambda (sym val)
-               (cons sym (box val)))
-             bindings
-             values)
-        env))
+  (env-cons (foldr frame-cons
+                   frame-null
+                   (map bind bindings values))
+            env))
+
+(define (make-environment alist . tail)
+  (env-cons (foldr (lambda (pair tail)
+                     (frame-cons (bind (car pair) (cdr pair))
+                                 tail))
+                   frame-null
+                   alist)
+            (if (null? tail) env-null (car tail))))
+
+(define (map-env proc lst)
+  (foldr* (lambda (x acc)
+            (cons (proc x) acc))
+          '()
+          lst
+          frame1 env-cdr env-null?))
+
+(define (map-frame proc lst)
+  (foldr* (lambda (x acc)
+            (cons (proc x) acc))
+          '()
+          lst
+          binding1 frame-cdr frame-null?))
+
+(define (inspect-environment env)
+  (map-env (lambda (frame)
+             (map-frame (lambda (binding)
+                          (cons (bound binding) (unbox binding)))
+                        frame))
+           env))
 
 (let ()
-  (define env `(((a . ,(box 1)) (b . ,(box 2)))))
+  (define env (make-environment '((a . 1) (b . 2))))
   (assert
    (env-get env 'a)                    => 1
    (env-get env 'b)                    => 2
@@ -126,42 +173,17 @@
    (env-set! env 'a 12)
    (env-get env 'a)                    => 12
    (set! env (env-extend env '(e f g) '(7 8 9)))
-   (env-get env 'g)                   => 9
-   (env-get env 'a)                   => 12
+   (env-get env 'g)                    => 9
+   (env-get env 'a)                    => 12
    ))
-
-(let ()
-  ;; The initial environment is two frames. The first with `a' bound
-  ;; to `1', and the second with `b' bound to `2'. Using env-define!
-  ;; should only search the first frame for a binding.
- (define (inspect-env env) env)
- (define env `(((a . ,(box 1))) ((b . ,(box 2)))))
- (assert
-  (inspect-env env) => '(((a . 1)) ((b . 2)))
-  (env-define! env 'b 3)
-  (inspect-env env) => '(((b . 3) (a . 1)) ((b . 2)))
-  ))
 
 ;;;; Types and expression predicates
-
-;;; eliminate srfi-9, just so we can use this with any scheme for now.
-;;; this is the only runtime data type we're using so far.
-
-;; (define-record-type rtd/proc
-;;   (make-proc env body args)
-;;   proc?
-;;   (env proc-env)
-;;   (body proc-body)
-;;   (args proc-args))
-
-(define (make-proc env body args)
-  (vector make-proc env body args))
-(define (proc? obj)
-  (and (vector? obj)
-       (eq? (vector-ref obj 0) make-proc)))
-(define (proc-env obj) (vector-ref obj 1))
-(define (proc-body obj) (vector-ref obj 2))
-(define (proc-args obj) (vector-ref obj 3))
+(define-record-type proc rtd/proc
+  (make-proc env body args)
+  proc?
+  (env proc-env)
+  (body proc-body)
+  (args proc-args))
 
 ;;; expression types
 (define (tagged-list? e tag)
@@ -424,13 +446,6 @@
          (error "invalid expresssion" expr))))
 
 ;;;; Primitive environment
-(define (make-environment alist)
-  ;; this just returns the alist now, since box is identity.
-  (list
-   (map (lambda (pair)
-          (cons (car pair) (box (cdr pair))))
-        alist)))
-
 (define scheme-report-environment-sic
   (make-environment
     `((cons       . ,cons)
@@ -443,8 +458,9 @@
 
 ;;;; Tests of the analysis and evaluation
 (let ()
-  (define ee (append (make-environment `((foo . 1) (bar . 2)))
-                    scheme-report-environment-sic))
+  (define ee (make-environment
+               `((foo . 1) (bar . 2))
+               scheme-report-environment-sic))
   (define value #f)
   (define kk (list (lambda (k v) (set! value v) value)))
 
