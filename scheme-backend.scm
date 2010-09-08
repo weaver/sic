@@ -521,14 +521,6 @@
      (define bar 2)
      (define add (lambda (x y) (+ x y)))
 
-     (define foldl
-       (lambda (proc nil lst)
-         (if (null? lst)
-             nil
-             (foldl proc
-                    (proc (car lst) nil)
-                    (cdr lst)))))
-
      (define foldr
        (lambda (proc nil lst)
          (if (null? lst)
@@ -538,7 +530,7 @@
 
      (define map
        (lambda (proc lst)
-         (foldl (lambda (x tail)
+         (foldr (lambda (x tail)
                   (cons (proc x) tail))
                 '()
                 lst)))
