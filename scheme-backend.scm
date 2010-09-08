@@ -58,7 +58,17 @@
 
 ;;;; Environment
 (define unspecified "Unspecified Value")
-(define error raise)
+
+(define (debug . args)
+  (for-each (lambda (x)
+              (display x)
+              (display #\space))
+            args)
+  (display #\newline))
+
+(define (error . args)
+  (apply debug "error" args)
+  (cdr 'error))
 
 ;; Boxes have actually been eliminated now, so box is simply
 ;; identity. Instead of a separate value box, we return the binding
@@ -190,16 +200,16 @@
 (define begin-body cdr)
 
 (define (prompt? e) (tagged-list? e 'prompt*))
-(define (prompt-tag e) cadr)
-(define (prompt-thunk e) caddr)
+(define prompt-tag cadr)
+(define prompt-thunk caddr)
 
 (define (abort? e) (tagged-list? e 'abort*))
-(define (abort-tag e) cadr)
-(define (abort-thunk e) caddr)
+(define abort-tag cadr)
+(define abort-thunk caddr)
 
 (define (capture? e) (tagged-list? e 'capture*))
-(define (capture-tag e) cadr)
-(define (capture-proc e) caddr)
+(define capture-tag cadr)
+(define capture-proc caddr)
 
 (define application-proc car)
 (define application-args cdr)
@@ -232,7 +242,7 @@
 
 (define (return k val)
   (let ((next (car k)))
-    (if (prompt-obj? k)
+    (if (prompt-obj? next)
         (return (cdr k) val)
         (next (cdr k) val))))
 
@@ -363,8 +373,6 @@
       (lp (analyze (car exprs))
           (map analyze (cdr exprs)))))
 
-(define debug debug-message)
-
 (define sequence-apply
   (make-sequence (lambda (k v1 v2)
                    (return k (cons v1 v2)))))
@@ -382,6 +390,7 @@
             (cont k (k args)
               (proc env
                     (cont k (k proc)
+                      ;; (debug "exec" e)
                       (execute-application k proc args))))))))
 
 (define (execute-application k proc args)
@@ -405,6 +414,9 @@
         ((if? expr) (analyze-if expr))
         ((lambda? expr) (analyze-lambda expr))
         ((begin? expr) (analyze-begin expr))
+        ((prompt? expr) (analyze-prompt expr))
+        ((abort? expr) (analyze-abort expr))
+        ((capture? expr) (analyze-capture expr))
         ;; primitives
         ((procedure? expr) (analyze-self-eval expr))
         ((pair? expr) (analyze-application expr))
@@ -424,6 +436,7 @@
     `((cons       . ,cons)
       (car        . ,car)
       (cdr        . ,cdr)
+      (null?      . ,null?)
       (+          . ,+)
       (=          . ,=)
       )))
@@ -485,13 +498,47 @@
 (define (sic expr)
   (evaluate expr scheme-report-environment-sic))
 
-(assert
- (sic
-  '((define foo 1)
-    (define bar 2)
-    (define add
-      (lambda (x y)
-        (+ x y)))
-    (add foo bar)))
- => 3
- )
+(let ()
+  (define env scheme-report-environment-sic)
+  (define (sic expr) (evaluate expr env))
+  (sic
+   '((define foo 1)
+     (define bar 2)
+     (define add (lambda (x y) (+ x y)))
+
+     (define foldl
+       (lambda (proc nil lst)
+         (if (null? lst)
+             nil
+             (foldl proc
+                    (proc (car lst) nil)
+                    (cdr lst)))))
+
+     (define foldr
+       (lambda (proc nil lst)
+         (if (null? lst)
+             nil
+             (proc (car lst)
+                   (foldr proc nil (cdr lst))))))
+
+     (define map
+       (lambda (proc lst)
+         (foldl cons '() lst)))
+
+     (define delim1
+       (lambda ()
+         (prompt*
+          'p1
+          (lambda ()
+            (map (lambda (x)
+                   (abort*
+                    'p1
+                    (lambda () x)))
+                 '(1 2 3))))))
+     ))
+
+  (assert
+   (sic '((add foo bar)))                   => 3
+   (sic '((map (lambda (x) x) '(1 2 3))))   => '(3 2 1)
+   (sic '((delim1)))                        => 1
+   ))
