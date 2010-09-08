@@ -307,51 +307,54 @@
              (env-set! env var v)
              (return k unspecified))))))
 
-(define (analyze-prompt e)
-  (let ((tag (analyze (prompt-tag e)))
-        (thunk (analyze (prompt-thunk e))))
+(define (analyze-dynamic-call tag thunk build-k)
+  (let ((tag (analyze tag)) (thunk (analyze thunk)))
     (lambda (env k)
       (tag env
            (cont k (k tag)
              (thunk env
-                    (cons (make-prompt tag)
-                          k)))))))
+                    (cont k (k thunk)
+                      (execute-application
+                       (build-k tag thunk k)
+                       thunk
+                       '()))))))))
+
+(define (analyze-prompt e)
+  (analyze-dynamic-call
+   (prompt-tag e)
+   (prompt-thunk e)
+   (lambda (tag thunk k)
+     (debug "prompt" k)
+     (cons (make-prompt tag)
+           k))))
 
 (define (analyze-abort e)
-  (define (search k tag)
-    (let lp ((k k))
-      (if (null? k)
-          (error "end of continuation stack")
-          (let ((head (car k)))
-            (if (prompt-match? head tag)
-                k
-                (lp (cdr k)))))))
-  (let ((tag (analyze (abort-tag e)))
-        (thunk (analyze (abort-thunk e))))
-    (lambda (env k)
-      (tag env
-           (cont k (k tag)
-             (thunk env
-                    (search k tag)))))))
+  (analyze-dynamic-call
+   (abort-tag e)
+   (abort-thunk e)
+   (lambda (tag thunk k)
+     (let lp ((k k))
+       (if (null? k)
+           (error "end of continuation stack")
+           (let ((head (car k)))
+             (if (prompt-match? head tag)
+                 (begin
+                   (debug "abort" (cdr k))
+                   (cdr k))
+                 (lp (cdr k)))))))))
 
 (define (analyze-capture e)
-  (define (search k tag)
-    (let lp ((k k) (cap '()))
-      (if (null? k)
-          (error "end of continuation stack")
-          (let ((head (car k)))
-            (if (prompt-match? head tag)
-                cap
-                (lp (cdr k) (cons head cap)))))))
-  (let ((tag (analyze (capture-tag e)))
-        (proc (analyze (capture-proc e))))
-    (lambda (env k)
-      (tag env
-           (cont k (k tag)
-             (execute-application
-              k
-              proc
-              (list (search k tag))))))))
+  (analyze-dynamic-call
+   (capture-tag e)
+   (capture-proc e)
+   (lambda (tag thunk k)
+     (let lp ((k k) (cap '()))
+       (if (null? k)
+           (error "end of continuation stack")
+           (let ((head (car k)))
+             (if (prompt-match? head tag)
+                 cap
+                 (lp (cdr k) (cons head cap)))))))))
 
 (define (analyze-if e)
   (let ((pred? (analyze (if-predicate e)))
@@ -412,7 +415,7 @@
             (cont k (k args)
               (proc env
                     (cont k (k proc)
-                      ;; (debug "exec" e)
+                      (debug "exec" e args)
                       (execute-application k proc args))))))))
 
 (define (execute-application k proc args)
@@ -539,9 +542,21 @@
 
      (define map
        (lambda (proc lst)
-         (foldl cons '() lst)))
+         (foldl (lambda (x tail)
+                  (cons (proc x) tail))
+                '()
+                lst)))
 
      (define delim1
+       (lambda ()
+         (prompt*
+          'p1
+          (lambda ()
+            (abort*
+             'p1
+             (lambda () 1))))))
+
+     (define delim2
        (lambda ()
          (prompt*
           'p1
@@ -557,4 +572,5 @@
    (sic '((add foo bar)))                   => 3
    (sic '((map (lambda (x) x) '(1 2 3))))   => '(3 2 1)
    (sic '((delim1)))                        => 1
+   (sic '((delim2)))                        => 1
    ))
