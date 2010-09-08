@@ -324,7 +324,6 @@
    (prompt-tag e)
    (prompt-thunk e)
    (lambda (tag thunk k)
-     (debug "prompt" k)
      (cons (make-prompt tag)
            k))))
 
@@ -338,9 +337,7 @@
            (error "end of continuation stack")
            (let ((head (car k)))
              (if (prompt-match? head tag)
-                 (begin
-                   (debug "abort" (cdr k))
-                   (cdr k))
+                 (cdr k)
                  (lp (cdr k)))))))))
 
 (define (analyze-capture e)
@@ -415,7 +412,6 @@
             (cont k (k args)
               (proc env
                     (cont k (k proc)
-                      (debug "exec" e args)
                       (execute-application k proc args))))))))
 
 (define (execute-application k proc args)
