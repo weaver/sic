@@ -1,7 +1,7 @@
 ;;;; Analyzing interpreter. See
 ;;;; http://mitpress.mit.edu/sicp/full-text/book/book-Z-H-26.html#%_sec_4.1.7
 ;;;; PLT r5rs compatibilty: (namespace-require 'r5rs)
-;;;; Scheme48 compatibilty: ,open define-record-types
+;;;; Scheme48 compatibilty: ,open define-record-types exceptions
 
 ;;;; Utility
 (define-syntax assert
@@ -71,8 +71,10 @@
   (display #\newline))
 
 (define (error . args)
-  (apply debug "error" args)
-  (cdr 'error))
+  (raise args)
+  ;; (apply debug "error" args)
+  ;; (cdr 'error)
+  )
 
 (define-record-type binding rtd/binding
   (bind sym val)
