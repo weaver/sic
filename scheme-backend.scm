@@ -1,65 +1,6 @@
 ;;;; Analyzing interpreter. See
 ;;;; http://mitpress.mit.edu/sicp/full-text/book/book-Z-H-26.html#%_sec_4.1.7
-;;;; PLT r5rs compatibilty: (namespace-require 'r5rs)
-;;;; Scheme48 compatibilty: ,open define-record-types exceptions
 
-;;;; Utility
-(define-syntax assert
-  (syntax-rules (=>)
-    ;; arrow is an infix operator for equal?
-    ((_ expr => val)
-     (let ((result expr))
-       (if (not (equal? result val))
-           (error "assertion failed" 'expr '=> result 'not val)
-           #t)))
-    ;; optional arrow and value
-    ((_ expr)
-     (if (not expr)
-         (error "assertion failed" 'expr)
-         #t))
-    ;; recursion with and without the arrow
-    ((_ e1 => v1 e2 ...) (and (assert e1 => v1) (assert e2 ...)))
-    ((_ e1 e2 ...) (and (assert e1) (assert e2 ...)))))
-
-(define-syntax if-let1
-  (syntax-rules ()
-    ((_ ((sym expr)) then else)
-     (let ((sym expr))
-       (if sym then else)))
-    ((_ ((expr)) then else)
-     (if expr then else))))
-
-(define-syntax if-let*
-  (syntax-rules ()
-    ;; provide a default else clause
-    ((_ bindings then) (if-let* bindings then #f))
-    ((_ () then else) (begin then))
-    ((_ (b1) then else) (if-let1 (b1) then else))
-    ((_ (b1 b2 ...) then else)
-     (if-let1 (b1)
-              (if-let* (b2 ...) then else)
-              else))))
-
-(define (foldr* proc nil lst car cdr null?)
-  (if (null? lst)
-      nil
-      (proc (car lst)
-            (foldr* proc nil (cdr lst) car cdr null?))))
-
-(define (foldr proc nil lst)
-  (foldr* proc nil lst car cdr null?))
-
-(assert
- (if-let1 ((#f)) 1 2)             => 2
- (if-let1 ((foo 1)) foo 2)        => 1
- (if-let* ((#f)) 1 2)             => 2
- (if-let* ((foo 1)) foo 2)        => 1
- (if-let* ((foo 1) (bar 1)) (+ foo bar) #f)          => 2
- (if-let* ((foo 1) (bar (= foo 2))) (+ foo bar) #f)  => #f
- (if-let* ((foo 1) (bar (= foo 2))) (+ foo bar))     => #f
- (foldr cons '() '(1 2 3))        => '(1 2 3)
- )
-
 ;;;; Environment
 (define unspecified "Unspecified Value")
 
@@ -76,13 +17,13 @@
   ;; (cdr 'error)
   )
 
-(define-record-type binding rtd/binding
+(define-record-type rtd/binding
   (bind sym val)
   binding?
   (sym bound)
   (val unbox set-box!))
 
-(define-record-type frame rtd/frame
+(define-record-type rtd/frame
   (frame-cons car cdr)
   frame?
   (car binding1)
@@ -91,7 +32,7 @@
 (define (frame-null) frame-null)
 (define (frame-null? obj) (eq? obj frame-null))
 
-(define-record-type environment rtd/environment
+(define-record-type rtd/environment
   (env-cons car cdr)
   env?
   (car frame1 set-frame1!)
@@ -164,23 +105,9 @@
                           (cons (bound binding) (unbox binding)))
                         frame))
            env))
-
-(let ()
-  (define env (make-environment '((a . 1) (b . 2))))
-  (assert
-   (env-get env 'a)                    => 1
-   (env-get env 'b)                    => 2
-   (env-define! env 'c 3)
-   (env-get env 'c)                    => 3
-   (env-set! env 'a 12)
-   (env-get env 'a)                    => 12
-   (set! env (env-extend env '(e f g) '(7 8 9)))
-   (env-get env 'g)                    => 9
-   (env-get env 'a)                    => 12
-   ))
 
 ;;;; Types and expression predicates
-(define-record-type proc rtd/proc
+(define-record-type rtd/proc
   (make-proc env body args)
   proc?
   (env proc-env)
@@ -237,25 +164,6 @@
 
 (define application-proc car)
 (define application-args cdr)
-
-(assert
- (and (self-eval? '2) (self-eval? "c") (self-eval? #t))
- (quoted? '(quote f))
- (quote-body '(quote f))             => 'f
- (define? '(define a '(b)))
- (define-symbol '(define a (b)))     => 'a
- (define-value '(define a (b)))      => '(b)
- (lambda? '(lambda (x) x))
- (lambda-formals '(lambda (x) x))    => '(x)
- (lambda-body '(lambda (x) x))       => '(x)
- (lambda-body '(lambda () 1))        => '(1)
- (if? '(if a b c))
- (if-predicate '(if a b c))          => 'a
- (if-then '(if a b c))               => 'b
- (if-else '(if a b c))               => 'c
- (application-proc '(+ 1 2))         => '+
- (application-args '(+ 1 2))         => '(1 2)
- )
 
 ;;;; Dynamic
 (define-syntax cont
@@ -445,122 +353,3 @@
         ((pair? expr) (analyze-application expr))
         (else
          (error "invalid expresssion" expr))))
-
-;;;; Primitive environment
-(define scheme-report-environment-sic
-  (make-environment
-    `((cons       . ,cons)
-      (car        . ,car)
-      (cdr        . ,cdr)
-      (null?      . ,null?)
-      (+          . ,+)
-      (=          . ,=)
-      )))
-
-;;;; Tests of the analysis and evaluation
-(let ()
-  (define ee (make-environment
-               `((foo . 1) (bar . 2))
-               scheme-report-environment-sic))
-  (define value #f)
-  (define kk (list (lambda (k v) (set! value v) value)))
-
-   ;; sanity check
-  (assert
-   ((analyze-self-eval 2) ee kk)                    => 2
-   ((analyze-quoted '(quote foo)) ee kk)            => 'foo
-   )
-  ;; variables
-  (assert
-   ((analyze-variable 'foo) ee kk)                  => 1
-   ((analyze-variable 'cdr) ee kk)                  => cdr
-   ((analyze-set! '(set! bar 3)) ee kk)
-   ((analyze-variable 'bar) ee kk)                  => 3
-   ((analyze-define '(define baz 4)) ee kk)
-   ((analyze-variable 'baz) ee kk)                  => 4
-   )
-  ;; ;; if
-  (assert
-   ((analyze-if '(if 1 foo bar)) ee kk)             => 1
-   ((analyze-if '(if 1 'foo bar)) ee kk)            => 'foo
-   ((analyze-if '(if #f 'foo bar)) ee kk)           => 3
-   )
-  ;; ;; begin
-  (assert
-   ((analyze-begun '(1)) ee kk)                     => 1
-   ((analyze-begun '(1 2 3)) ee kk)                 => 3
-   ((analyze-begun '((set! bar 4) (set! bar 5) bar)) ee kk)   => 5
-   )
-  ;; ;; lambda (just make sure we run make-proc)
-  (assert
-   ((analyze-lambda '(lambda (x y) (+ x y))) ee kk))
-  ;; ;; application
-  (assert
-   ((analyze '+) ee kk)
-   ((analyze '1) ee kk)
-   ((analyze '2) ee kk)
-   ((analyze-application '(+ 1 2)) ee kk)           => 3
-   ((analyze-application '(= 4 4)) ee kk)           => #t
-   )
-  )
-
-(define (evaluate expr environment)
-  (let ((value #f))
-    ((analyze-begun expr)
-     environment
-     (list (lambda (k v)
-             (set! value v))))
-    value))
-
-(define (sic expr)
-  (evaluate expr scheme-report-environment-sic))
-
-(let ()
-  (define env scheme-report-environment-sic)
-  (define (sic expr) (evaluate expr env))
-  (sic
-   '((define foo 1)
-     (define bar 2)
-     (define add (lambda (x y) (+ x y)))
-
-     (define foldr
-       (lambda (proc nil lst)
-         (if (null? lst)
-             nil
-             (proc (car lst)
-                   (foldr proc nil (cdr lst))))))
-
-     (define map
-       (lambda (proc lst)
-         (foldr (lambda (x tail)
-                  (cons (proc x) tail))
-                '()
-                lst)))
-
-     (define delim1
-       (lambda ()
-         (prompt*
-          'p1
-          (lambda ()
-            (abort*
-             'p1
-             (lambda () 1))))))
-
-     (define delim2
-       (lambda ()
-         (prompt*
-          'p1
-          (lambda ()
-            (map (lambda (x)
-                   (abort*
-                    'p1
-                    (lambda () x)))
-                 '(1 2 3))))))
-     ))
-
-  (assert
-   (sic '((add foo bar)))                   => 3
-   (sic '((map (lambda (x) x) '(1 2 3))))   => '(1 2 3)
-   (sic '((delim1)))                        => 1
-   (sic '((delim2)))                        => 3
-   ))
