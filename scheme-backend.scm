@@ -558,7 +558,7 @@
 
   (assert
    (sic '((add foo bar)))                   => 3
-   (sic '((map (lambda (x) x) '(1 2 3))))   => '(3 2 1)
+   (sic '((map (lambda (x) x) '(1 2 3))))   => '(1 2 3)
    (sic '((delim1)))                        => 1
-   (sic '((delim2)))                        => 1
+   (sic '((delim2)))                        => 3
    ))
