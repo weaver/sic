@@ -32,30 +32,38 @@
 (define slot-idx cdr)
 
 (define-record-type rtd/module
-  (make-module* name heap export import)
+  (make-module* name heap import export gensym)
   module?
   (name module-name)
   (heap module-heap)
   (import module-import)
-  (export module-export set-module-export!))
+  (export module-export set-module-export!)
+  (gensym module-gensym set-module-gensym!))
 
 (define (make-module name)
-  (make-module* name (make-heap) #f #f))
+  (make-module* name (make-heap) #f #f 0))
 
-(define current-module (make-fluid #f))
+;; (define current-module (make-fluid #f))
 
 (define (ref module rib idx)
   (vector-ref
    (vector-ref (module-heap module) rib)
    idx))
 
-(define (gensym* module)
-  (let* ((heap (module-heap module))
-         (slot (heap-allocate heap)))
-    `(ref ,module ,(slot-rib slot) ,(slot-idx slot))))
+;; (define (gensym* module)
+;;   (let* ((heap (module-heap module))
+;;          (slot (heap-allocate heap)))
+;;     `(ref ,module ,(slot-rib slot) ,(slot-idx slot))))
 
-(define (gensym)
-  (gensym* (fluid current-module)))
+(define (gensym* module)
+  (let ((gensym (module-gensym module))
+        (prefix (string-append (module-name module) ":")))
+    (set-module-gensym! module (+ gensym 1))
+    (string->symbol
+     (string-append prefix (number->string gensym)))))
+
+;; (define (gensym)
+;;   (gensym* (fluid current-module)))
 
 (define (cps-begin . body)
   (let ((value (gensym)))
@@ -63,7 +71,7 @@
       ,(foldr (lambda (head tail)
                 `(,head (lambda (,value)
                           ,tail)))
-              `(cont v)
+              `(cont ,value)
               body))))
 
 (define current-module (make-module "test"))
