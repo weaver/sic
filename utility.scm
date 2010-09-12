@@ -54,3 +54,23 @@
  (if-let* ((foo 1) (bar (= foo 2))) (+ foo bar))     => #f
  (foldr cons '() '(1 2 3))        => '(1 2 3)
  )
+
+(define-syntax begin1
+  (syntax-rules ()
+    ((_ first rest ...)
+     (let ((result first))
+       rest ...
+       result))))
+
+(define (fold-right-penultimate proc last lst)
+  (let lp ((lst lst))
+    (if (null? (cdr lst))               ; you'll get an error on an empty list
+        (last (car lst))
+        (proc (car lst) (lp (cdr lst))))))
+
+(define (foldl proc nil lst)
+  (if (null? lst)
+      nil
+      (foldl proc
+             (proc (car lst) nil)
+             (cdr lst))))
