@@ -41,8 +41,21 @@
       (proc (car lst)
             (foldr* proc nil (cdr lst) car cdr null?))))
 
-(define (foldr proc nil lst)
+(define (foldr-one proc nil lst)
   (foldr* proc nil lst car cdr null?))
+
+(define (foldr-two proc nil l1 l2)
+  (if (null? l1)
+      nil
+      (proc (car l1)
+            (car l2)
+            (foldr-two proc nil (cdr l1) (cdr l2)))))
+
+(define (foldr proc nil . lsts)
+  (case (length lsts)
+    ((1) (foldr-one proc nil (car lsts)))
+    ((2) (foldr-two proc nil (car lsts) (cadr lsts)))
+    (else (error "not implemented"))))
 
 (assert
  (if-let1 ((#f)) 1 2)             => 2
@@ -62,15 +75,30 @@
        rest ...
        result))))
 
-(define (fold-right-penultimate proc last lst)
-  (let lp ((lst lst))
-    (if (null? (cdr lst))               ; you'll get an error on an empty list
-        (last (car lst))
-        (proc (car lst) (lp (cdr lst))))))
-
-(define (foldl proc nil lst)
+(define (foldl-one proc nil lst)
   (if (null? lst)
       nil
       (foldl proc
              (proc (car lst) nil)
              (cdr lst))))
+
+(define (foldl-two proc nil l1 l2)
+  (if (null? l1)
+      nil
+      (foldl-two proc
+                 (proc (car l1) (car l2) nil)
+                 (cdr l1)
+                 (cdr l2))))
+
+(define (foldl proc nil . lsts)
+  (case (length lsts)
+    ((1) (foldl-one proc nil (car lsts)))
+    ((2) (foldl-two proc nil (car lsts) (cadr lsts)))
+    (else (error "not implemented"))))
+
+(define (last lst)
+  (if (null? (cdr lst))
+      (car lst)
+      (last (cdr lst))))
+
+(define call/cc call-with-current-continuation)
