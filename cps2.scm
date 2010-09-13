@@ -59,28 +59,32 @@
 (define (constant? e)
   (or (number? e) (character? e) (string? e)))
 
-(define (atom e)
-  (or (constant? e) (symbol? e)))
+(define (primitive? e)
+  (procedure? e))
 
-(define (cps-application module application)
+(define (atom? e)
+  (not (pair? e)))
+
+(define (cps-application syntax application)
   (let ((proc (car application)))
     `(lambda (cont)
-       (,(cps-arguments module (cdr application))
+       (,(cps-arguments syntax (cdr application))
         (lambda (args)                  ; new continuation
           (cont (apply ,proc args)))))))
 
-(define (cps-arguments module arguments)
+(define (cps-arguments syntax arguments)
  (let ((symbols (map (lambda (head)
-                        (if (atom? head) head (gensym module)))
-                      arguments)))
-    `(lambda (cont)
+                        (if (atom? head) head (vsym syntax)))
+                      arguments))
+       (outer (ksym syntax)))
+    `(lambda (,outer)
        ,(foldl (lambda (sym head tail)
                  (if (atom? head)
                      tail
-                     `(,(cps-application module head)
+                     `(,(cps-application syntax head)
                        (lambda (,sym)   ; new continuation
                          ,tail))))
-               `(cont (list ,@symbols))
+               `(,outer (list ,@symbols))
                symbols
                arguments))))
 
@@ -88,7 +92,7 @@
 (define (tm) (make-module "test"))
 
 (assert
- (cps-arguments (tm) '(1 2)) => '(lambda (cont) (cont 1 2))
+ (cps-arguments (tm) '(1 2)) => '(lambda (test:k:1) (test:k:1 1 2))
  (cps-arguments (tm) `(foo (+ 1 2)))
  =>
  '(lambda (cont)
