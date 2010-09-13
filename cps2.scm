@@ -1,36 +1,3 @@
-(define heap-spine-len 8)
-(define heap-rib-len 256)
-
-(define-record-type rtd/heap
-  (make-heap* spine rib idx)
-  heap?
-  (spine heap-spine)
-  (rib heap-rib set-heap-rib!)
-  (idx heap-idx set-heap-idx!))
-
-(define (make-heap)
-  (let ((spine (make-vector heap-spine-len #f)))
-    (vector-set! spine 0 (make-vector heap-rib-len #f))
-    (make-heap* spine 0 0)))
-
-(define (heap-allocate heap)
-  (let ((spine (heap-spine heap))
-        (rib (heap-rib heap))
-        (idx (heap-idx heap)))
-    (if (= idx heap-rib-len)
-        (if (= rib heap-spine-len)
-            (error "out of memory")
-            (begin
-              (vector-set! spine (+ rib 1) (make-vector heap-rib-len))
-              (set-heap-rib! (+ rib 1))
-              (heap-allocate heap)))
-        (begin
-          (set-heap-idx! heap (+ idx 1))
-          (cons rib idx)))))
-
-(define slot-rib car)
-(define slot-idx cdr)
-
 (define-record-type rtd/module
   (make-module* name heap import export gensym)
   module?
@@ -44,16 +11,6 @@
   (make-module* name (make-heap) #f #f 0))
 
 ;; (define current-module (make-fluid #f))
-
-(define (ref module rib idx)
-  (vector-ref
-   (vector-ref (module-heap module) rib)
-   idx))
-
-;; (define (gensym* module)
-;;   (let* ((heap (module-heap module))
-;;          (slot (heap-allocate heap)))
-;;     `(ref ,module ,(slot-rib slot) ,(slot-idx slot))))
 
 (define (gensym* module)
   (let ((gensym (module-gensym module))
