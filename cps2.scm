@@ -1,84 +1,104 @@
 (define-record-type rtd/module
-  (make-module* name heap import export gensym)
+  (make-module* name symbol import export gensym)
   module?
   (name module-name)
-  (heap module-heap)
-  (import module-import)
+  (symbol module-symbol)
+  (import module-import set-module-import!)
   (export module-export set-module-export!)
   (gensym module-gensym set-module-gensym!))
 
 (define (make-module name)
-  (make-module* name (make-heap) #f #f 0))
+  (make-module* name #f #f 0))
 
-;; (define current-module (make-fluid #f))
-
-(define (gensym* module)
+(define (gensym module)
   (let ((gensym (module-gensym module))
         (prefix (string-append (module-name module) ":")))
     (set-module-gensym! module (+ gensym 1))
     (string->symbol
      (string-append prefix (number->string gensym)))))
 
-;; (define (gensym)
-;;   (gensym* (fluid current-module)))
+(define (variable? module e)
 
-(define (cps-begin . body)
-  (let ((value (gensym)))
-   `(lambda (cont)
-      ,(foldr (lambda (head tail)
-                `(,head (lambda (,value)
-                          ,tail)))
-              `(cont ,value)
-              body))))
+  )
 
-(define current-module (make-module "test"))
-(define (gensym) (gensym* current-module))
+(define (constant? e)
+  (or (number? e) (character? e) (string? e)))
 
-(assert
- (cps-begin 1 2) =>
- '(lambda (cont)
-    (1 (lambda (v)
-         (2 (lambda (v)
-              (cont v))))))
- )
+(define (atom e)
+  (or (constant? e) (symbol? e)))
 
-(define (cps-arguments . body)
-  (let* ((symbols (map (lambda (x) (gensym)) body))
-         (cur symbols)
-         (sym (lambda ()
-                (begin1 (car cur)
-                        (set! cur (cdr symbols))))))
+(define (cps-application module application)
+  (let ((proc (car application)))
     `(lambda (cont)
-       ,(foldl (lambda (head tail)
-                 `(,head (lambda (,(sym))
-                           ,tail)))
+       (,(cps-arguments module (cdr application))
+        (lambda (args)                  ; new continuation
+          (cont (apply ,proc args)))))))
+
+(define (cps-arguments module arguments)
+ (let ((symbols (map (lambda (head)
+                        (if (atom? head) head (gensym module)))
+                      arguments)))
+    `(lambda (cont)
+       ,(foldl (lambda (sym head tail)
+                 (if (atom? head)
+                     tail
+                     `(,(cps-application module head)
+                       (lambda (,sym)   ; new continuation
+                         ,tail))))
                `(cont (list ,@symbols))
-               body))))
+               symbols
+               arguments))))
+
+;; for testing, this makes the gensyms all start at 0
+(define (tm) (make-module "test"))
 
 (assert
- (cps-arguments 1 2) =>
+ (cps-arguments (tm) '(1 2)) => '(lambda (cont) (cont 1 2))
+ (cps-arguments (tm) `(foo (+ 1 2)))
+ =>
  '(lambda (cont)
-    (1 (lambda (v1)
-         (2 (lambda (v2)
-              (cont (list v1 v2))))))
-    )
+    ((lambda (cont)
+       ((lambda (cont)
+          (cont (list 1 2)))
+        (lambda (args)
+          (cont (apply + args)))))
+     (lambda (test:0) (cont (list foo test:0)))))
  )
 
+(define (cps-begin module body)
+  (let ((value (gensym module))
+        (final (last body))
+        (outer (gensym module)))
+    `(lambda (,outer)
+       ,(foldl (lambda (head tail)
+                 (if (atom? head)
+                     tail               ; an error?
+                     `(,(cps-application module head)
+                       (lambda (,value) ; new continuation
+                         ,tail))))
+               `(,outer ,(if (atom? final) final value))
+               (cdr body)))))
+
+(cps-begin (tm) '(begin (+ 4 5) t))
 
 
-'(lambda (k)
-   (1 (cont k (k v)
-        ((lambda (k) (2 (cont k (k v) (return k v))))
-         k))
-      ))
+'(lambda (test:1)
+   ((lambda (cont)
+      ((lambda (cont)
+         (cont (list 4 5)))
+       (lambda (args)
+         (cont (apply + args)))))
+    (lambda (test:0) (test:1 t))))
 
-(define (cps-lambda formal . body)
-  `(lambda (k)
-
-     )
-  )
-
-(define module-sic
-  `((lambda . ,(define )
-        ))
-  )
+(assert
+ (cps-begin (tm) '(begin 1 2)) => '(lambda (cont) (cont 2))
+ (cps-begin (tm) '(begin (+ 4 5) t)) =>
+ '(lambda (cont)
+    ((lambda (cont)
+       ((lambda (cont)
+          (cont (list 4 5)))
+        (lambda (args)
+          (cont (apply + args)))))
+     (lambda (test:0)
+       (cont t))))
+ )
