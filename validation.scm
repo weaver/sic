@@ -1,5 +1,5 @@
 ;;;; PLT r5rs compatibilty: (namespace-require 'r5rs)
-;;;; Scheme48 compatibilty: ,open srfi-9 exceptions srfi-23 fluids
+;;;; Scheme48 compatibilty: ,open srfi-9 exceptions srfi-23 tables
 
 (load "utility.scm")
 (load "scheme-backend.scm")
