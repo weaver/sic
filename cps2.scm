@@ -1,25 +1,60 @@
-(define-record-type rtd/module
-  (make-module* name symbol import export gensym)
-  module?
-  (name module-name)
-  (symbol module-symbol)
-  (import module-import set-module-import!)
-  (export module-export set-module-export!)
-  (gensym module-gensym set-module-gensym!))
+(define-record-type rtd/syntax-closure
+  (make-syntax-closure* name gensym symbol cdr)
+  (name syntax-name)
+  (gensym syntax-gensym set-syntax-gensym!)
+  (symbol syntax-table)
+  (cdr syntax-cdr))
 
-(define (make-module name)
-  (make-module* name #f #f 0))
+(define (make-syntax-closure name tail)
+  (make-syntax-closure* name 0 (make-symbol-table) tail))
 
-(define (gensym module)
-  (let ((gensym (module-gensym module))
-        (prefix (string-append (module-name module) ":")))
-    (set-module-gensym! module (+ gensym 1))
-    (string->symbol
-     (string-append prefix (number->string gensym)))))
+(define (syntax-null) syntax-null)
+(define (syntax-null? obj) (eq? obj syntax-null))
 
-(define (variable? module e)
+(define (syntax-ref s key)
+  (table-ref (syntax-table s) key))
 
-  )
+(define (syntax-set! s key val)
+  (table-set! (syntax-table s) key val))
+
+(define (syntax++ syntax)
+  (let ((inc (+ (syntax-gensym syntax) 1)))
+   (set-syntax-gensym! syntax inc)
+   inc))
+
+(define (syntax-foldr proc nil syntax)
+  (foldr* proc nil syntax identity syntax-cdr syntax-null?))
+
+(define (syntax-map proc s)
+  (syntax-foldr (lambda (s a) (cons (proc s) a)) '() s))
+
+(define (syntax-for-each proc s)
+  (syntax-foldr (lambda (s a) (proc s)) '() s))
+
+(define (syntax-id s)
+  (syntax-map syntax-name s))
+
+(define (gensym* prefix syntax)
+  (string->symbol
+   (list->string
+    (syntax-id syntax)
+    ":"
+    prefix
+    ":"
+    (number->string (syntax++ syntax)))))
+
+(define (vsym s) (gensym* "v" s))
+(define (ksym s) (gensym* "k" s))
+
+(define (variable? s e)
+  (call/cc
+   (lambda (k)
+     (syntax-for-each
+      (lambda (s)
+        (let ((val (syntax-ref s e)))
+          (k val)))
+      s)
+     #f)))
 
 (define (constant? e)
   (or (number? e) (character? e) (string? e)))
