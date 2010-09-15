@@ -1,6 +1,6 @@
 ;;;; cps.scm -- Convert Scheme forms into continuation-passing style
 
-;; ,open srfi-23
+,open srfi-23
 (load "scheme-backend.scm")
 
 
@@ -58,7 +58,7 @@
 
 (define (uniq seq)
   (foldl (lambda (item result)
-           (if (memq? item result)
+           (if (memq item result)
                result
                (cons item result)))
          '()
@@ -66,7 +66,7 @@
 
 (let ()
   (assert
-   (uniq '(a b a c d b e)) => '(e b d c a)))
+   (uniq '(a b a c d b e)) => '(e d c b a)))
 
 (define (never? _) #f)
 
@@ -114,20 +114,20 @@
 (define (return cont expr)
   (if cont `(,cont ,expr) expr))
 
-(define-syntax let-cps
+(define-syntax let-cpc
   (syntax-rules ()
     ((_ () body)
      body)
     ((_ ((name expr) bind ...) body)
      (let ((value expr))
        (if (atom? value)
-           (let ((name expr))
-             (let-cps (bind ...) body))
+           (let ((name value))
+             (let-cpc (bind ...) body))
            (let ((name (gensym 'name)))
              (cpc
               value
               `(lambda (,name)
-                 ,(let-cps (bind ...) body)))))))))
+                 ,(let-cpc (bind ...) body)))))))))
 
 ;; [v K]
 ;; (K v)
@@ -137,13 +137,13 @@
 ;; [(set! v E1) K]
 ;; (lambda (r1) (K (set! v r1)))
 (define (cpc-set expr cont)
-  (let-cps ((set-val (set-value expr)))
+  (let-cpc ((set-val (set-value expr)))
    (return cont `(set! ,(set-symbol expr) ,set-val))))
 
 ;; [(if E1 E2 E3) K]
 ;; [E1 (lambda (r1) (if r1 [E2 K] [E3 K]))]
 (define (cpc-if expr cont)
-  (let-cps ((if-k cont)
+  (let-cpc ((if-k cont)
             (if-pred (if-predicate expr)))
    `(if ,if-pred
          ,(cpc (if-then expr) if-k)
@@ -190,20 +190,20 @@
              (names '()))
     (if (null? args)
         (return cont `(,(application-proc expr) ,@(reverse names)))
-        (let-cpc (val (car args))
+        (let-cpc ((val (car args)))
          (loop (cdr args) (cons val names))))))
 
 ;; [(E0 E1 E2) K]
 ;; [E0 (lambda (r0) [E1 (lambda (r1) [E2 (lambda (r2) (r0 K r1 r2))])])]
 (define (cpc-application expr cont)
-  (let-cpc (op (application-proc expr))
+  (let-cpc ((op (application-proc expr)))
    (let loop ((args (application-args expr))
               (names '()))
      (if (null? args)
          `(,op ,cont ,@(reverse names))
-         (let-cpc (arg (car args))
-                  (loop (cdr args)
-                        (cons arg names)))))))
+         (let-cpc ((arg (car args)))
+          (loop (cdr args)
+                (cons arg names)))))))
 
 ;; [((lambda (P1 P2) E0) E1 E2) K]
 ;; [E1 (lambda (P1) [E2 (lambda (P2) [E0 K])])]
@@ -433,7 +433,7 @@
    (free-identifiers '(lambda (a) (+ a b c)))
    => '(+ b c)
    (free-identifiers '(lambda (a) (z (lambda (y) (a x y z)))))
-   => '(z x)
+   => '(x z)
    (self-refs 'self.1 '(a b))
    => '((b %closure-ref self.1 2) (a %closure-ref self.1 1))
 
@@ -475,7 +475,7 @@
     never?
     '((square . square)
       (*cont* . *cont*)))
-   => '((lambda (set-val.3 square *cont*)
+   => '((lambda (set-val.3 *cont* square)
           ((lambda (seq.1 square *cont*)
              ((%closure-ref square 0)
               square
@@ -491,9 +491,11 @@
            *cont*))
         (%closure
          (lambda (self.2 k.4 x)
-           ((%closure-ref k.4 0) k.4 (%* x x))))
-        square
-        *cont*)
+           ((%closure-ref k.4 0)
+            k.4
+            (%* x x))))
+        *cont*
+        square)
 
    ;; Large example
    (test-close
@@ -562,10 +564,16 @@
   (eval
    `(call-with-current-continuation
      (lambda (return)
+       ;; Reify the real continuation as a %CLOSURE.  The %CLOSURE
+       ;; body discards self and applies the continuation values to
+       ;; the real continuation.
        (let ((*cont* (%closure (lambda (self . rest) (apply return rest)))))
          ,(close (cps expr)
                  `((*cont* . *cont*) ,@env)))))
    (interaction-environment)))
 
-(evaluate ((lambda (a) (%* a a)) 5) '())
+(let ()
+  (assert
+   (evaluate ((lambda (a) (%* a a)) 5) '())
+   => 25))
 
