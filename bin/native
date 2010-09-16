@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+
+llc $1.ll && gcc $1.s -o $1
+
+
+
