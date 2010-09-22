@@ -102,3 +102,16 @@
       (last (cdr lst))))
 
 (define call/cc call-with-current-continuation)
+
+(define (identity x) x)
+
+(define (intersperse el lst)
+  (cons (car lst)
+        (foldr (lambda (x xs)
+                 (cons el (cons x xs)))
+               '()
+               (cdr lst))))
+
+(define (string-join el lst)
+  (apply string-append
+         (intersperse el lst)))
