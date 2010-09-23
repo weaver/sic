@@ -20,6 +20,20 @@ The top level in scheme can get pretty weird. Modules should behave
 like `letrec*` and any module should be able to host a repl (maybe).
 As we figure out what "predictable" means, we'll implement it.
 
+## Module Working List ##
+
+1. Macro text included in the interface, with closed identifiers
+   resolved.
+
+2. Exported function bodies in the interface, for inline optimization.
+
+3. fexpr as a compiler feature.
+
+4. Initial pass, resolving identifiers via syntax closure and reducing
+   expressions.
+
+5. CPS pass.
+
 # Delimited Continuations #
 
 A complete, efficient set of the delimited continuation primitives.
