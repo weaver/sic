@@ -1,0 +1,19 @@
+#+TITLE:     SIC, the Scheme Incremental Compiler
+#+AUTHOR:    Ben Weaver, Lang Martin
+#+EMAIL:     lang.martin@gmail.com
+
+* Compiler and Module System [%]
+  :PROPERTIES:
+  :ORDERED:  t
+  :END:
+** Scheme Backend [0%]
+*** TODO Reader
+*** TODO Primitives
+** Module Data Structures [%]
+** CPS [%]
+
+* COMMENT Org Mode
+#+SEQ_TODO: TODO LANG WEAVER | DONE
+# Local Variables:
+# mode:org
+# End:
