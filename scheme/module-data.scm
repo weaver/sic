@@ -1,26 +1,3 @@
-;;;; Environment (a dictionary). Used for env, export, and gensym.
-(define make-env list)
-
-(define env? list?)
-
-(define (env-bind env binding val)
-  (cons (cons binding val)
-        env))
-
-(define (env-lookup env binding)
-  (and-let* ((box (memq env binding)))
-    (cdr box)))
-
-(define (env-set! env binding value)
-  (and-let* ((box (memq env binding)))
-    (set-car! box value)
-    #t))
-
-(define (unspecified) unspecified)
-
-(define (unspecified? obj) (eq? unspecified obj))
-
-;;;; Module
 (define-record-type rtd/module
   (make-module* name env export gensym tail)
   module*?
@@ -32,19 +9,16 @@
 
 (define (module-cons name tail)
   (make-module* name
-                (make-env)
-                (make-env)
-                (make-env)
+                '()
+                '()
+                '()
                 tail))
 
 (define module-car identity)
-
 (define module-cdr module-tail)
 
 (define (module-null) module-null)
-
-(define (module-null? obj)
-  (eq? obj module-null))
+(define (module-null? obj) (eq? obj module-null))
 
 (define (module? obj)
   (or (null-module? obj)
@@ -66,3 +40,36 @@
   (let ((seed (+ (gensym-lookup module 'seed) 1)))
     (gensym-bind! module 'seed seed)
     (gensym-bind! module seed unspecified)))
+
+(define (unspecified) unspecified)
+(define (unspecified? obj) (eq? unspecified obj))
+
+(define box? pair?)
+(define unbox cdr)
+
+(define (module-lookup* module slot sym)
+  (and-let* ((env (slot module))
+             (box (memq env binding)))
+    box))
+
+(define (module-bind*! module slot set-slot! sym val)
+  (let* ((env (slot module))
+         (box (memq env sym)))
+    (if box
+        (set-car! box value)
+        (set-slot! module (cons (cons binding value) env)))))
+
+(define (module-lookup module sym)
+  (module-lookup* module module-env sym))
+(define (module-bind! module sym val)
+  (module-bind*! module module-env set-module-env! sym val))
+
+(define (module-export module sym)
+  (module-lookup* module module-export sym))
+(define (module-export! module sym val)
+  (module-bind*! module module-export set-module-export! sym val))
+
+(define (module-gensym module sym)
+  (module-lookup* module module-gensym sym))
+(define (module-gensym! module sym val)
+  (module-bind*! module module-gensym set-module-gensym! sym val))
