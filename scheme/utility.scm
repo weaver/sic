@@ -115,3 +115,35 @@
 (define (string-join el lst)
   (apply string-append
          (intersperse el lst)))
+
+(define (string-starts-with string prefix)
+  (let ((slen (string-length string))
+        (plen (string-length prefix)))
+    (and (<= plen slen)
+         (let loop ((ii 0))
+           (or (eq? ii plen)
+               (and (eq? (string-ref string ii)
+                         (string-ref prefix ii))
+                    (loop (+ ii 1))))))))
+
+(define (symbol-starts-with symbol prefix)
+  (string-starts-with
+   (symbol->string symbol)
+   (symbol->string prefix)))
+
+(assert
+ (symbol-starts-with '%foo '%)
+ (symbol-starts-with 'bar '%) => #f)
+
+(define (uniq seq)
+  (foldl (lambda (item result)
+           (if (memq item result)
+               result
+               (cons item result)))
+         '()
+         seq))
+
+(assert
+ (uniq '(a b a c d b e)) => '(e d c b a))
+
+(define (never? _) #f)
