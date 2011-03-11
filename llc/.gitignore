@@ -1,0 +1,5 @@
+example
+llc.img
+*.s
+*.ll
+test*

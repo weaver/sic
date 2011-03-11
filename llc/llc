@@ -1,0 +1,2 @@
+#!/bin/sh
+exec scheme48 -i `dirname $0`/llc.img -a $@
