@@ -26,14 +26,16 @@
 
 (define-syntax if-let*
   (syntax-rules ()
-    ;; provide a default else clause
-    ((_ bindings then) (if-let* bindings then #f))
     ((_ () then else) (begin then))
     ((_ (b1) then else) (if-let1 (b1) then else))
     ((_ (b1 b2 ...) then else)
      (if-let1 (b1)
               (if-let* (b2 ...) then else)
               else))))
+
+(define-syntax and-let*
+  (syntax-rules ()
+    ((_ bindings body) (if-let* bindings then #f))))
 
 (define (foldr* proc nil lst car cdr null?)
   (if (null? lst)

@@ -2,13 +2,15 @@
   (make-module* name env export gensym tail)
   module*?
   (name module-name*)
+  (tag module-tag)
   (env module-env set-module-env!)
   (export module-export set-module-export!)
   (gensym module-gensym set-module-gensym!)
   (tail module-tail))
 
-(define (module-cons name tail)
+(define (module-cons name tag tail)
   (make-module* name
+                tag
                 '()
                 '()
                 '()
@@ -61,15 +63,18 @@
 
 (define (module-lookup module sym)
   (module-lookup* module module-env sym))
+
 (define (module-bind! module sym val)
   (module-bind*! module module-env set-module-env! sym val))
 
 (define (module-export module sym)
   (module-lookup* module module-export sym))
+
 (define (module-export! module sym val)
   (module-bind*! module module-export set-module-export! sym val))
 
 (define (module-gensym module sym)
   (module-lookup* module module-gensym sym))
+
 (define (module-gensym! module sym val)
   (module-bind*! module module-gensym set-module-gensym! sym val))

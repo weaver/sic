@@ -3,31 +3,11 @@
 ,open srfi-23
 (load "scheme/utility.scm")
 (load "scheme/module-data.scm")
-
-
-;;; Grammar
-
-(define identifier? variable?)
-
-;; Stub
-(define (primitive? expr)
-  (and (identifier? expr)
-       (or (symbol-starts-with expr '%)
-           (eq? expr 'if)
-           (eq? expr 'set!))))
-
-(define (atom? expr)
-  (or (self-eval? expr)
-      (quoted? expr)
-      (identifier? expr)))
-
-(define application? pair?)
-
+(load "scheme/expr-data.scm")
 
 ;;; CPS Conversion
-
 (define (cps expr)
-  (cpc expr '*CONT*))
+  (cpc expr *k*))
 
 (define (cpc expr cont)
   ((cpc-converter expr) expr cont))
@@ -57,7 +37,7 @@
        (if (atom? value)
            (let ((name value))
              (let-cpc (bind ...) body))
-           (let ((name (gensym 'name)))
+           (let ((name (gensym expr 'name)))
              (cpc
               value
               `(lambda (,name)
@@ -97,24 +77,23 @@
   (let ((body (lambda-body expr)))
     (if (null? body)
         (error 'empty-lambda-body expr)
-        (let ((kn (gensym 'k)))
+        (let ((kn (gensym expr 'k)))
           (return cont
                   `(lambda (,kn ,@(lambda-formals expr))
                      ,(cpc-foldr body kn)))))))
 
-(define (cpc-foldr seq cont)
-  (let ((expr (car seq))
-        (tail (cdr seq)))
+(define (cpc-foldr expr cont)
+  (let ((tail (expr-cdr seq)))
     ;; Optimize for the case where an expression in the sequence is
     ;; just an atom.  If it's not in the tail position, it can be
     ;; folded out.
     (if (and (atom? expr)
-             (not (null? tail)))
+             (not (expr-null? tail)))
         (cpc-foldr tail cont)
         (cpc expr
-             (if (null? tail)
+             (if (expr-null? tail)
                  cont
-                 `(lambda (,(gensym 'seq))
+                 `(lambda (,(gensym expr 'seq))
                     ,(cpc-foldr tail cont)))))))
 
 ;; [(+ E1 E2) K]
@@ -168,7 +147,7 @@
   (assert
    ;; cpc-atom
    (test-cps 'a)
-   => '(*CONT* a)
+   => '(*k* a)
 
    ;; cpc-set
    (test-cps '(set! a 1))
@@ -315,7 +294,7 @@
 ;; procedure body.  The body is converted in the context of the
 ;; LAMBDA's formal parameters and the new closure.
 (define (close-lambda expr bound? free)
-  (let* ((self (gensym 'self))
+  (let* ((self (gensym expr 'self))
          (formals (lambda-formals expr))
          (free-in-expr (free-identifiers expr)))
     `(%closure
