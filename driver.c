@@ -12,6 +12,7 @@ int scheme_entry();
 #define BOOL_MASK     0xFF
 #define BOOL_TAG      0x3F
 #define BOOL_SHIFT    8
+#define EMPTY_LIST    0x2F
 
 int main(int argc, char** argv) {
   int val = scheme_entry();
@@ -26,6 +27,8 @@ int main(int argc, char** argv) {
     } else {
       printf("#t");
     }
+  } else if (val == EMPTY_LIST) {
+    printf("'()");
   }
 
   return 0;

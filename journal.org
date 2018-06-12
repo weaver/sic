@@ -95,10 +95,41 @@ called: symbols and numbers are treated specially.
 + Add rollup summary stats to test runs.
 + Exit with particular status code based on test run success.
 *** 3.2 Intermediate Constants
+
+Add support for characters, boolean, and empty list. Ensure that
+fixnums don't regress.
+
+#+BEGIN_SRC sh
+% make                                                                                                                                                                                                                                                               [23:14:14]
+chibi-scheme compile.scm
+Testing 3.1 Integers
+✔ OK 42
+✔ OK -1
+Testing 3.2 Intermediate Constants
+✔ OK #\c
+✔ OK #\"
+✔ OK #t
+✔ OK #f
+✔ OK '()
+#+END_SRC
+
 **** Implementation Notes
+
+Added procedure ~IMMEDIATE-REPR~ that encodes scheme values to machine
+integer values. Added corresponding support to =driver.c= for decoding
+integer values and printing appropriate scheme representation.
 
 + Fixnums have mask 0x03 (shift 2 bits) and are tagged with 0x00.
 + Characters have mask 0xFF (shift 8 bits) and tag 0x0F
++ Boolean have a similar mask and shift with tag 0x3F
++ Empty list has static value / tag 0x3F
+
+Used [[https://srfi.schemers.org/srfi-33/srfi-33.txt][(srfi 33)]] for bitwise operations.
+
+These changes resolve some of the future improvements noted in 3.1
+because inputs are validated by type: an exception is raised when an
+unsupported value is passed to ~IMMEDIATE-REPR~. However, integers can
+still overflow.
 
 **** Future Improvements
 

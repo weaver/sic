@@ -24,6 +24,7 @@
 (define CHAR-TAG #x0F)
 (define BOOL-SHIFT 8)
 (define BOOL-TAG #x3F)
+(define EMPTY-LIST #x2F)
 
 (define (immediate-repr source)
   (cond
@@ -37,6 +38,8 @@
     (bitwise-ior
      (arithmetic-shift (if source 1 0) BOOL-SHIFT)
      BOOL-TAG))
+   ((null? source)
+    EMPTY-LIST)
    (else
     (raise (compilation-error "no immediate-repr" source)))))
 
@@ -87,7 +90,7 @@
        (print "✗ FAIL " source ": expected {" expect "}, got {" result "}")
        #f)
      (else
-      (print "✔ OK " source)))))
+      (print "✔ OK " expect)))))
 
 (test-section
  "3.1 Integers"
@@ -99,4 +102,5 @@
  (test-case #\c "#\\c")
  (test-case #\" "#\\\"")
  (test-case #t "#t")
- (test-case #f "#f"))
+ (test-case #f "#f")
+ (test-case (list) "'()"))
