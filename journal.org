@@ -138,3 +138,124 @@ still overflow.
 + DRY up operations in driver for masking and comparing with tags
 + DRY up 8-bit shift operations
 + run specific test
+** Tue Jun 12 2018
+*** 3.3 Unary Primitives
+
+Added support for =add1=, =sub1=, =integer->char=, =char->integer=,
+=null?=, =zero?=, =integer?=, =char?=, =boolean?=, and =not=. Each of
+these operations accept a single argument. It's emitted as an
+expression (stored in =%eax=).
+
++ =add1= and =sub1= are then implemented using =addl= and =subl=
++ =integer->char= and =char->integer= are then implemented with
+  arithmetic shift and logical OR (to tag).
+
+Predicates and =not= are implemented using a combination of =cmp= +
+=set= followed by an arithmetic shift and logical OR to convert the
+value to boolean. For example, =zero?= is ~(predicate compare-to 0)~ and
+=integer?= is ~(predicate test-mask FIXNUM-MASK)~.
+
+#+BEGIN_SRC scheme
+  (define (compare-to literal)
+    (emit "cmpl $" literal ", %eax")
+    (emit "movl $0, %eax")
+    (emit "sete %al"))
+
+  (define (test-mask mask tag)
+    (emit "andb $" mask ", %al")
+    (emit "cmpb $" tag ", %al")
+    (emit "movl $0, %eax")
+    (emit "sete %al"))
+
+  (define (shift-left-and-tag shift tag)
+    (emit "shll $" shift ", %eax")
+    (emit "orl $" tag ", %eax"))
+#+END_SRC
+
+**** Implementation Notes
+
+Learned a little more about [[https://en.wikibooks.org/wiki/X86_Assembly/GAS_Syntax][GAS Syntax]]. Operation suffixes indicate
+operand size. For example, "l" means "long".
+
+This [[https://en.wikibooks.org/wiki/X86_Assembly][wikibook about X86_Assembly]] is a helpful reference for basic
+instructions.
+
+Used ~make assemble-test~ with =scheme_entry= definitions like the
+example below. Learned that the Load Effective Address operation
+(=lea=) can be used to implement basic artithmetic operations in a few
+cases.
+
+#+BEGIN_SRC c
+int scheme_entry(int val) {
+  return (val << 6) | 0x2F;
+}
+#+END_SRC
+
+The example above assembles to:
+
+#+BEGIN_SRC asm
+	shll	$6, %edi
+	leal	47(%rdi), %eax
+#+END_SRC
+
+From [[https://en.wikibooks.org/wiki/X86_Assembly/GAS_Syntax#Address_operand_syntax][Address Operand Syntax]]: there are up to 4 parameters of an
+address operand that are presented in the syntax
+~segment:displacement(base register, index register, scale
+factor)~. The base, index and displacement components can be used in
+any combination, and every component can be omitted; omitted
+components are excluded from the calculation above.
+
+Trying different permutations of C code showed that =lea= wasn't
+always used: sometimes =orl= is used instead. To DRY this up, always
+use =orl=. For example:
+
+#+BEGIN_SRC c
+int scheme_entry(int val) {
+  return ((val == 63) << 8) | 63;
+}
+#+END_SRC
+
+assembles to:
+
+#+BEGIN_SRC asm
+	xorl	%eax, %eax
+	cmpl	$63, %edi
+	sete	%al
+	shll	$8, %eax
+	orl	$63, %eax
+#+END_SRC
+
+The generated code zeros a register with =xor=. This generates a
+smaller opcode than =mov= ([[https://stackoverflow.com/questions/1396527/what-is-the-purpose-of-xoring-a-register-with-itself][see stack overflow]]). Howver, these
+operations caused a number of problems with a general
+implementation. First, =xor= sets processor flags, which makes =cmp= +
+=set= fail to produce the expected outcome in some cases. Next, the
+use of the =di= register also makes some operations fail.
+
+Using =mov= instead of =xor= and =ax= instead of =di= yields
+predicates that are all implemented in terms of the procedures
+below. For example, =zero?= is ~(predicate compare-to 0)~ and
+=integer?= is ~(predicate test-mask FIXNUM-MASK)~.
+
+#+BEGIN_SRC scheme
+  (define (compare-to literal)
+    (emit "cmpl $" literal ", %eax")
+    (emit "movl $0, %eax")
+    (emit "sete %al"))
+
+  (define (test-mask mask tag)
+    (emit "andb $" mask ", %al")
+    (emit "cmpb $" tag ", %al")
+    (emit "movl $0, %eax")
+    (emit "sete %al"))
+
+  (define (shift-left-and-tag shift tag)
+    (emit "shll $" shift ", %eax")
+    (emit "orl $" tag ", %eax"))
+#+END_SRC
+**** Future Imrovements
+
++ no bounds checking on inputs
++ some inefficiency from DRY code (for example, =cmp= for
+  =FIXNUM-TAG=)
++ recognize constant expressions and pre-calculate results

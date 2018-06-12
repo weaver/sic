@@ -20,30 +20,106 @@
   (list 'compilation-error message args))
 
 (define FIXNUM-SHIFT 2)
+(define FIXNUM-MASK #x03)
+(define FIXNUM-TAG #x00)
 (define CHAR-SHIFT 8)
 (define CHAR-TAG #x0F)
+(define CHAR-MASK #xFF)
 (define BOOL-SHIFT 8)
 (define BOOL-TAG #x3F)
+(define BOOL-MASK #xFF)
 (define EMPTY-LIST #x2F)
 
-(define (immediate-repr source)
+(define (immediate? expr)
+  (or (integer? expr)
+      (char? expr)
+      (boolean? expr)
+      (null? expr)))
+
+(define (immediate-repr expr)
   (cond
-   ((integer? source)
-    (arithmetic-shift source FIXNUM-SHIFT))
-   ((char? source)
+   ((integer? expr)
+    (arithmetic-shift expr FIXNUM-SHIFT))
+   ((char? expr)
     (bitwise-ior
-     (arithmetic-shift (char->integer source) CHAR-SHIFT)
+     (arithmetic-shift (char->integer expr) CHAR-SHIFT)
      CHAR-TAG))
-   ((boolean? source)
+   ((boolean? expr)
     (bitwise-ior
-     (arithmetic-shift (if source 1 0) BOOL-SHIFT)
+     (arithmetic-shift (if expr 1 0) BOOL-SHIFT)
      BOOL-TAG))
-   ((null? source)
+   ((null? expr)
     EMPTY-LIST)
    (else
-    (raise (compilation-error "no immediate-repr" source)))))
+    (raise (compilation-error 'no-immediate-expression expr)))))
 
-(define (compile-program source)
+(define (emit-immediate expr)
+  (emit "movl $" (immediate-repr expr) ", %eax"))
+
+(define (primcall? expr)
+  (and (pair? expr)
+       (memq (primcall-op expr)
+	     '(add1 sub1 integer->char char->integer null? zero? not integer? boolean? char?))))
+
+(define primcall-op car)
+(define primcall-operand1 cadr)
+
+(define (emit-primcall expr)
+
+  (define (compare-to literal)
+    (emit "cmpl $" literal ", %eax")
+    (emit "movl $0, %eax")
+    (emit "sete %al"))
+
+  (define (test-mask mask tag)
+    (emit "andb $" mask ", %al")
+    (emit "cmpb $" tag ", %al")
+    (emit "movl $0, %eax")
+    (emit "sete %al"))
+
+  (define (shift-left-and-tag shift tag)
+    (emit "shll $" shift ", %eax")
+    (emit "orl $" tag ", %eax"))
+
+  (define (predicate op . args)
+    (apply op args)
+    (shift-left-and-tag BOOL-SHIFT BOOL-TAG))
+
+  (emit-expr (primcall-operand1 expr))
+  (case (primcall-op expr)
+    ((add1)
+     (emit "addl $" (immediate-repr 1) ", %eax"))
+    ((sub1)
+     (emit "subl $" (immediate-repr 1) ", %eax"))
+    ((integer->char)
+     (shift-left-and-tag (- CHAR-SHIFT FIXNUM-SHIFT) CHAR-TAG))
+    ((char->integer)
+     (emit "shrl $" (- CHAR-SHIFT FIXNUM-SHIFT) ", %eax"))
+    ((null?)
+     (predicate compare-to EMPTY-LIST))
+    ((zero?)
+     (predicate compare-to 0))
+    ((integer?)
+     (predicate test-mask FIXNUM-MASK FIXNUM-TAG))
+    ((char?)
+     (predicate test-mask CHAR-MASK CHAR-TAG))
+    ((boolean?)
+     (predicate test-mask BOOL-MASK BOOL-TAG))
+    ((not)
+     ;; A false value will be zero shifted by BOOL-SHIFT and then
+     ;; tagged (equal to BOOL-TAG)
+     (predicate compare-to BOOL-TAG))))
+
+(define (emit-expr expr)
+  (cond
+   ((immediate? expr)
+    (emit-immediate expr))
+   ((primcall? expr)
+    (emit-primcall expr))
+   (else
+    (raise (compilation-error 'unrecognized-expr expr)))))
+
+(define (compile-program expr)
   (emit-all
    "	.section	__TEXT,__text,regular,pure_instructions"
    "	.globl	_scheme_entry"
@@ -51,7 +127,7 @@
    "_scheme_entry:"
    "	.cfi_startproc")
 
-  (emit "movl $" (immediate-repr source) ", %eax")
+  (emit-expr expr)
   (emit "retq")
 
   (emit-all
@@ -87,10 +163,10 @@
        (print "ERROR " source)
        #f)
      ((not (string=? result expect))
-       (print "✗ FAIL " source ": expected {" expect "}, got {" result "}")
+       (print "✗ FAIL  " source ": expected {" expect "}, got {" result "}")
        #f)
      (else
-      (print "✔ OK " expect)))))
+      (print "✔ OK    " source " => " expect)))))
 
 (test-section
  "3.1 Integers"
@@ -104,3 +180,34 @@
  (test-case #t "#t")
  (test-case #f "#f")
  (test-case (list) "'()"))
+
+(test-section
+ "3.3 Unary Operations"
+ (test-case '(add1 42) "43")
+ (test-case '(sub1 42) "41")
+
+ (test-case '(integer->char 42) "#\\*")
+ (test-case '(char->integer #\*) "42")
+
+ (test-case '(not #f) "#t")
+ (test-case '(not #t) "#f")
+ (test-case '(not 42) "#f")
+ (test-case '(not 0) "#f")
+
+ (test-case '(boolean? #t) "#t")
+ (test-case '(boolean? #f) "#t")
+ (test-case '(boolean? 42) "#f")
+
+ (test-case '(null? 42) "#f")
+ (test-case '(null? ()) "#t")
+
+ (test-case '(integer? 42) "#t")
+ (test-case '(integer? #t) "#f")
+
+ (test-case '(zero? 0) "#t")
+ (test-case '(zero? 42) "#f")
+ (test-case '(zero? #f) "#f")
+ (test-case '(zero? ()) "#f")
+
+ (test-case '(char? #\*) "#t")
+ (test-case '(char? 42) "#f"))
