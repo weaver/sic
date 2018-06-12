@@ -1,7 +1,8 @@
 (import (scheme base)
 	(scheme write)
 	(scheme file)
-	(chibi process))
+	(chibi process)
+	(srfi 33))
 
 (define (print . args)
   (for-each display args)
@@ -15,6 +16,18 @@
 (define (emit-all . text)
   (for-each emit text))
 
+(define (compilation-error message . args)
+  (list 'compilation-error message args))
+
+(define FIXNUM-SHIFT 2)
+
+(define (immediate-repr source)
+  (cond
+   ((integer? source)
+    (arithmetic-shift source FIXNUM-SHIFT))
+   (else
+    (raise (compilation-error "no immediate-repr" source)))))
+
 (define (compile-program source)
   (emit-all
    "	.section	__TEXT,__text,regular,pure_instructions"
@@ -23,7 +36,7 @@
    "_scheme_entry:"
    "	.cfi_startproc")
 
-  (emit "movl $" source ", %eax")
+  (emit "movl $" (immediate-repr source) ", %eax")
   (emit "retq")
 
   (emit-all

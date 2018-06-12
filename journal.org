@@ -1,12 +1,8 @@
-** Mon Jun 11 2018
-
 #+BEGIN_SRC sh
-open http://scheme2006.cs.uchicago.edu/11-ghuloum.pdf
-
-brew install chibi-scheme
-open http://synthcode.com/scheme/chibi/
+make install compile
 #+END_SRC
 
+** Mon Jun 11 2018
 *** 3.1 Integers
 
 Integers can be compiled to Gnu Assembler and linked to with a
@@ -98,3 +94,13 @@ called: symbols and numbers are treated specially.
   directive" when compiling =test.s=).
 + Add rollup summary stats to test runs.
 + Exit with particular status code based on test run success.
+*** 3.2 Intermediate Constants
+**** Implementation Notes
+
+Fixnums have mask 0x03 (shift 2 bits) and are tagged with 0x00.
+
+**** Future Improvements
+
++ constants for shifts are duplicated between =driver.c and
+  =compile.scm=
++ run specific test
