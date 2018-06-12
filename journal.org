@@ -1,0 +1,100 @@
+** Mon Jun 11 2018
+
+#+BEGIN_SRC sh
+open http://scheme2006.cs.uchicago.edu/11-ghuloum.pdf
+
+brew install chibi-scheme
+open http://synthcode.com/scheme/chibi/
+#+END_SRC
+
+*** 3.1 Integers
+
+Integers can be compiled to Gnu Assembler and linked to with a
+rudimentary =driver.c=. The driver calls ~int scheme_entry()~ and
+prints its result to stdout. The =scheme_entry= procedure is
+implemented via ~COMPILE-PROGRAM~ in =compile.scm=, which emits GNU
+Assembler to stdout. The ~COMPILE-TEST!~ and ~RUN-TEST!~ procedures
+write the emitted assembler to =test.s=, build an executable called
+=test=, and run it.
+
+#+BEGIN_SRC asm
+_scheme_entry:
+	.cfi_startproc
+	movl	$42, %eax
+	retq
+	.cfi_endproc
+#+END_SRC
+
+Assesmbler is derived from writing equivalent C code in =test.c= and
+compiling it to assembler with ~make assemble-test~.
+
+Integers are compiled by printing the number to stdout using Chibi
+Scheme's built-in support for writing numbers to an output port. The
+driver interprets integers by using ~%d~ in a C =stdio= string
+template.
+
+Test results:
+#+BEGIN_SRC sh
+% make                                                                                                                                                                                                                                                               [21:47:16]
+chibi-scheme compile.scm
+Testing 3.1 Integers
+✔ OK 42
+✔ OK -1
+#+END_SRC
+
+**** Implementation Notes
+
+On OS X, running ~gcc --omit-frame-pointer~ produces the error =clang:
+error: unsupported option '--omit-frame-pointer'=. Instead, use
+[[https://stackoverflow.com/a/47851488][-fomit-frame-pointer -momit-leaf-frame-pointer]].
+
+#+BEGIN_SRC c
+int scheme_entry() {
+  return 42;
+}
+#+END_SRC
+
+#+BEGIN_SRC asm
+	.section	__TEXT,__text,regular,pure_instructions
+	.macosx_version_min 10, 13
+	.globl	_scheme_entry           ## -- Begin function scheme_entry
+	.p2align	4, 0x90
+_scheme_entry:                          ## @scheme_entry
+	.cfi_startproc
+## BB#0:
+	movl	$42, %eax
+	retq
+	.cfi_endproc
+                                        ## -- End function
+#+END_SRC
+
+Documentation for GNU Assembler (GAS) CFI directives are [[https://sourceware.org/binutils/docs-2.24/as/CFI-directives.html#CFI-directives][here]]. Above:
+
++ cfi_startproc :: begins a function that should have an entry in =eh_frame=
++ cfi_endproc :: ends a function
+
+An =eh_frame= contains language-specific information for exception
+handling. The [[http://web.archive.org/web/20130111101034/http://blog.mozilla.org/respindola/2011/05/12/cfi-directives][CFI directives]] allows the assembler to generate a table
+based on code sizes.
+
+Other notes:
+
++ The ~retq~ instruction is [[https://stackoverflow.com/a/42654290][explicit about operand size]].
+
+Used [[http://synthcode.com/scheme/chibi/lib/chibi/process.html][(chibi process)]] to execute subprocesses. Commands can be
+represented as strings (and are split on whitespace before execution)
+or lists. List elements are [[https://github.com/ashinn/chibi-scheme/blob/master/lib/chibi/process.scm#L59][formatted to strings]] before =execvp= is
+called: symbols and numbers are treated specially.
+
+**** Questions
+
++ What does generated code look like without ~--omit-frame-pointer~?
+**** Future Improvements
+
++ Compilation depends on special designations "test.s" and "test"
++ No input validation is done and scheme's integers can be arbitrarily
+  large. This can cause the driver to overflow (wrapping to negative
+  values) or compilation failure ("literal value out of range for
+  directive" when compiling =test.s=).
++ Add rollup summary stats to test runs.
++ Exit with particular status code based on test run success.
