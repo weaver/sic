@@ -6,12 +6,17 @@ int scheme_entry();
 #define FIXNUM_MASK   0x03
 #define FIXNUM_TAG    0
 #define FIXNUM_SHIFT  2
+#define CHAR_MASK     0xFF
+#define CHAR_TAG      0x0F
+#define CHAR_SHIFT    8
 
 int main(int argc, char** argv) {
   int val = scheme_entry();
 
-  if ((val & FIXNUM_TAG) == FIXNUM_TAG) {
+  if ((val & FIXNUM_MASK) == FIXNUM_TAG) {
     printf("%d", val >> FIXNUM_SHIFT);
+  } else if ((val & CHAR_MASK) == CHAR_TAG) {
+    printf("#\\%c", val >> CHAR_SHIFT);
   }
 
   return 0;

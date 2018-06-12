@@ -97,10 +97,10 @@ called: symbols and numbers are treated specially.
 *** 3.2 Intermediate Constants
 **** Implementation Notes
 
-Fixnums have mask 0x03 (shift 2 bits) and are tagged with 0x00.
++ Fixnums have mask 0x03 (shift 2 bits) and are tagged with 0x00.
++ Characters have mask 0xFF (shift 8 bits) and tag 0x0F
 
 **** Future Improvements
 
-+ constants for shifts are duplicated between =driver.c and
-  =compile.scm=
++ constants for shifts are duplicated between =driver.c and =compile.scm=
 + run specific test

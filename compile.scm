@@ -20,11 +20,17 @@
   (list 'compilation-error message args))
 
 (define FIXNUM-SHIFT 2)
+(define CHAR-SHIFT 8)
+(define CHAR-TAG #x0F)
 
 (define (immediate-repr source)
   (cond
    ((integer? source)
     (arithmetic-shift source FIXNUM-SHIFT))
+   ((char? source)
+    (bitwise-ior
+     (arithmetic-shift (char->integer source) CHAR-SHIFT)
+     CHAR-TAG))
    (else
     (raise (compilation-error "no immediate-repr" source)))))
 
@@ -81,3 +87,8 @@
  "3.1 Integers"
  (test-case 42 "42")
  (test-case -1 "-1"))
+
+(test-section
+ "3.2 Intermediate Constants"
+ (test-case #\c "#\\c")
+ (test-case #\" "#\\\""))
