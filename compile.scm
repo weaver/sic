@@ -22,6 +22,8 @@
 (define FIXNUM-SHIFT 2)
 (define CHAR-SHIFT 8)
 (define CHAR-TAG #x0F)
+(define BOOL-SHIFT 8)
+(define BOOL-TAG #x3F)
 
 (define (immediate-repr source)
   (cond
@@ -31,6 +33,10 @@
     (bitwise-ior
      (arithmetic-shift (char->integer source) CHAR-SHIFT)
      CHAR-TAG))
+   ((boolean? source)
+    (bitwise-ior
+     (arithmetic-shift (if source 1 0) BOOL-SHIFT)
+     BOOL-TAG))
    (else
     (raise (compilation-error "no immediate-repr" source)))))
 
@@ -91,4 +97,6 @@
 (test-section
  "3.2 Intermediate Constants"
  (test-case #\c "#\\c")
- (test-case #\" "#\\\""))
+ (test-case #\" "#\\\"")
+ (test-case #t "#t")
+ (test-case #f "#f"))

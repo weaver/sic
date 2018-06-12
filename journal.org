@@ -102,5 +102,8 @@ called: symbols and numbers are treated specially.
 
 **** Future Improvements
 
-+ constants for shifts are duplicated between =driver.c and =compile.scm=
++ constants for shifts and tags are duplicated between =driver.c and =compile.scm=
++ constants for masks should be derivatives of shifts
++ DRY up operations in driver for masking and comparing with tags
++ DRY up 8-bit shift operations
 + run specific test
