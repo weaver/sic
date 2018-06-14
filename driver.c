@@ -29,6 +29,8 @@ int main(int argc, char** argv) {
     }
   } else if (val == EMPTY_LIST) {
     printf("'()");
+  } else {
+    printf("#unknown");
   }
 
   return 0;

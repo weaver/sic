@@ -56,15 +56,17 @@
 (define (emit-immediate expr)
   (emit "movl $" (immediate-repr expr) ", %eax"))
 
-(define (primcall? expr)
+(define (unary-primcall? expr)
   (and (pair? expr)
        (memq (primcall-op expr)
 	     '(add1 sub1 integer->char char->integer null? zero? not integer? boolean? char?))))
 
 (define primcall-op car)
 (define primcall-operand1 cadr)
+(define (primcall-operand2 expr)
+  (car (cddr expr)))
 
-(define (emit-primcall expr)
+(define (emit-unary-primcall expr si)
 
   (define (compare-to literal)
     (emit "cmpl $" literal ", %eax")
@@ -85,7 +87,7 @@
     (apply op args)
     (shift-left-and-tag BOOL-SHIFT BOOL-TAG))
 
-  (emit-expr (primcall-operand1 expr))
+  (emit-expr (primcall-operand1 expr) si)
   (case (primcall-op expr)
     ((add1)
      (emit "addl $" (immediate-repr 1) ", %eax"))
@@ -108,30 +110,80 @@
     ((not)
      ;; A false value will be zero shifted by BOOL-SHIFT and then
      ;; tagged (equal to BOOL-TAG)
-     (predicate compare-to BOOL-TAG))))
+     (predicate compare-to BOOL-TAG))
+    (else
+     (raise (compilation-error 'unrecognized-unary-primcall expr)))))
 
-(define (emit-expr expr)
+(define (binary-primcall? expr)
+  (and (pair? expr)
+       (memq (primcall-op expr)
+	     '(+ - * = < char=?))))
+
+(define WORDSIZE 4)
+
+(define (init-stack-index)
+  (* WORDSIZE -1))
+
+(define (next-stack-index si)
+  (- si WORDSIZE))
+
+(define (emit-binary-primcall expr si)
+  (emit-expr (primcall-operand2 expr) si)
+  (emit "movl %eax, " si "(%rsp)")
+  (emit-expr
+   (primcall-operand1 expr)
+   (next-stack-index si))
+  (case (primcall-op expr)
+    ((+)
+     (emit "addl " si "(%rsp), %eax"))
+    (else
+     (raise (compilation-error 'unrecognized-binary-primcall expr)))))
+
+(define (emit-expr expr si)
   (cond
    ((immediate? expr)
     (emit-immediate expr))
-   ((primcall? expr)
-    (emit-primcall expr))
+   ((unary-primcall? expr)
+    (emit-unary-primcall expr si))
+   ((binary-primcall? expr)
+    (emit-binary-primcall expr si))
    (else
     (raise (compilation-error 'unrecognized-expr expr)))))
 
-(define (compile-program expr)
+(define (compile-program-clang expr)
   (emit-all
    "	.section	__TEXT,__text,regular,pure_instructions"
    "	.globl	_scheme_entry"
    "	.p2align	4, 0x90"
    "_scheme_entry:"
-   "	.cfi_startproc")
+   "	.cfi_startproc"
+   "	.cfi_def_cfa_offset 16")
 
-  (emit-expr expr)
+  (emit-expr expr (init-stack-index))
   (emit "retq")
 
   (emit-all
    "	.cfi_endproc"))
+
+(define (compile-program-gcc expr)
+  (emit-all
+   "	.file	\"test.c\""
+   "	.text"
+   "	.globl	scheme_entry"
+   "	.type	scheme_entry, @function"
+   "scheme_entry:"
+   ".LFB0:"
+   "	.cfi_startproc")
+
+  (emit-expr expr (init-stack-index))
+
+  (emit-all
+    "	ret"
+    "	.cfi_endproc"
+    ".LFE0:"
+    "	.size	scheme_entry, .-scheme_entry"))
+
+(define compile-program compile-program-clang)
 
 
 ;; Tests
@@ -211,3 +263,9 @@
 
  (test-case '(char? #\*) "#t")
  (test-case '(char? 42) "#f"))
+
+(test-section
+ "3.4 Binary Operations"
+ (test-case '(+ 2 3) "5")
+ (test-case '(+ 3 (add1 4)) "8")
+ (test-case '(add1 4) "5"))

@@ -259,3 +259,40 @@ below. For example, =zero?= is ~(predicate compare-to 0)~ and
 + some inefficiency from DRY code (for example, =cmp= for
   =FIXNUM-TAG=)
 + recognize constant expressions and pre-calculate results
+** Thu Jun 14 2018
+*** 3.4 Binary Primitives
+
+Supported primitives: =+=
+
+**** Implementation Notes
+
+When first adding support for binary primitives, a =segmentation
+fault= occurred when running any of the test cases. For example, the
+test case ~(test-case '(+ 2 3) "5")~ generated this assembly:
+
+#+BEGIN_SRC asm
+movl $12, %eax
+movl %eax, -4(%esp)
+movl $8, %eax
+addl -4(%esp), %eax
+#+END_SRC
+
+After some trial and error, the problem turned out to be architecture
+incompatibility. The program was being compiled for a 64-bit
+architecture, but the 32-bit stack pointer register was being used. To
+fix this, switch to use =rsp= instead of =esp= or else pass =-m32= to
+=gcc=.
+
+Some of the trial and error was attempting a built in dockerized linux
+with gcc instead of in OS X with gcc-clang. Two notes:
+
++ the "wrapper" assembley is different: can the same header/footer be
+  used in both places?
++ running the test suite in Linux is faster than OS X: why? It seems
+  to be something about running a slow first-run for newly compiled
+  programs. Maybe antivirus and not OS X?
+
+**** Future Improvements
+
++ reconcile assembley header/footer of Linux/gcc with OSX/gcc-clang
++ figure out why first-run of test-cases is slow on OS X

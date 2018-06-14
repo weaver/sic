@@ -14,3 +14,7 @@ install:
 	brew install chibi-scheme
 	open "http://scheme2006.cs.uchicago.edu/11-ghuloum.pdf"
 	open "http://synthcode.com/scheme/chibi/"
+
+docker-shell:
+	docker build -t sic:latest .
+	docker run -it --rm -v $(shell pwd):/sic -w /sic sic:latest /bin/bash
