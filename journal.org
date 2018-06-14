@@ -262,7 +262,9 @@ below. For example, =zero?= is ~(predicate compare-to 0)~ and
 ** Thu Jun 14 2018
 *** 3.4 Binary Primitives
 
-Supported primitives: =+=
+Supported primitives: add, subtract, multiply, quotient, remainder,
+integer comparison, character comparison, integer equality, character
+equality, boolean equality
 
 **** Implementation Notes
 
@@ -292,7 +294,10 @@ with gcc instead of in OS X with gcc-clang. Two notes:
   to be something about running a slow first-run for newly compiled
   programs. Maybe antivirus and not OS X?
 
+Helpful list of Intel [[https://web.itu.edu.tr/kesgin/mul06/intel/index.html][x86 Instructions]].
+
 **** Future Improvements
 
 + reconcile assembley header/footer of Linux/gcc with OSX/gcc-clang
 + figure out why first-run of test-cases is slow on OS X
++ return a remainder

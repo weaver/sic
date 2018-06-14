@@ -117,9 +117,10 @@
 (define (binary-primcall? expr)
   (and (pair? expr)
        (memq (primcall-op expr)
-	     '(+ - * = < char=?))))
+	     '(+ - * quotient remainder = char=? boolean=? < > <= >= char<? char>? char<=? char>=?))))
 
 (define WORDSIZE 4)
+(define STACK-POINTER "%rsp")
 
 (define (init-stack-index)
   (* WORDSIZE -1))
@@ -127,15 +128,97 @@
 (define (next-stack-index si)
   (- si WORDSIZE))
 
+(define (stack-get si)
+  (string-append (number->string si) "(" STACK-POINTER ")"))
+
+
 (define (emit-binary-primcall expr si)
-  (emit-expr (primcall-operand2 expr) si)
-  (emit "movl %eax, " si "(%rsp)")
-  (emit-expr
-   (primcall-operand1 expr)
-   (next-stack-index si))
+  (define (emit-op2)
+    (emit-expr (primcall-operand2 expr) si))
+
+  (define (push-op2)
+    (emit "movl %eax, " (stack-get si)))
+
+  (define (emit-op1)
+    (emit-expr (primcall-operand1 expr) (next-stack-index si)))
+
+  (define (shift-right shift)
+    (emit "shrl $" shift ", %eax"))
+
+  (define (native->fixnum)
+    (emit "shll $" FIXNUM-SHIFT ", %eax"))
+
+  (define (emit-args shift)
+    (emit-op2)
+    (shift-right shift)
+    (push-op2)
+    (emit-op1)
+    (shift-right shift))
+
+  (define (emit-fixnum-args)
+    (emit-args FIXNUM-SHIFT))
+
+  (define (emit-boolean-args)
+    (emit-args BOOL-SHIFT))
+
+  (define (emit-char-args)
+    (emit-args CHAR-SHIFT))
+
+  (define (compare->boolean emit-type-args set)
+    (emit-type-args)
+    (emit "cmpl " (stack-get si) ", %eax")
+    (emit set " %al")
+    (emit "shll $" BOOL-SHIFT ", %eax")
+    (emit "orl $" BOOL-TAG ", %eax"))
+
   (case (primcall-op expr)
     ((+)
-     (emit "addl " si "(%rsp), %eax"))
+     (emit-fixnum-args)
+     (emit "addl " (stack-get si) ", %eax")
+     (native->fixnum))
+    ((-)
+     (emit-fixnum-args)
+     (emit "subl " (stack-get si) ", %eax")
+     (native->fixnum))
+    ((*)
+     (emit-fixnum-args)
+     (emit "imull " (stack-get si) ", %eax")
+     (native->fixnum))
+    ((quotient)
+     (emit-fixnum-args)
+     ;; IDIVL uses EDX:EAX as the divident -- CDQ sign-extends EAX
+     ;; into EDX, forming the quad-word EDX:EAX.
+     (emit "cdq")
+     (emit "idivl " (stack-get si))
+     (native->fixnum))
+    ((remainder)
+     (emit-fixnum-args)
+     (emit "cdq")
+     (emit "idivl " (stack-get si))
+     (emit "movl %edx, %eax")
+     (native->fixnum))
+    ((=)
+     (compare->boolean emit-fixnum-args "sete"))
+    ((char=?)
+     (compare->boolean emit-char-args "sete"))
+    ((boolean=?)
+     (compare->boolean emit-boolean-args "sete"))
+    ((<)
+     (compare->boolean emit-fixnum-args "setl"))
+    ((char<?)
+     (compare->boolean emit-char-args "setl"))
+    ((<=)
+     (compare->boolean emit-fixnum-args "setle"))
+    ((char<=?)
+     (compare->boolean emit-char-args "setle"))
+    ((>)
+     (compare->boolean emit-fixnum-args "setg"))
+    ((char>?)
+     (compare->boolean emit-char-args "setg"))
+    ((>=)
+     (compare->boolean emit-fixnum-args "setge"))
+    ((char>=?)
+     (compare->boolean emit-char-args "setge"))
     (else
      (raise (compilation-error 'unrecognized-binary-primcall expr)))))
 
@@ -268,4 +351,53 @@
  "3.4 Binary Operations"
  (test-case '(+ 2 3) "5")
  (test-case '(+ 3 (add1 4)) "8")
- (test-case '(add1 4) "5"))
+
+ (test-case '(- 50 8) "42")
+ (test-case '(* 20 2) "40")
+
+ (test-case '(quotient 84 2) "42")
+ (test-case '(remainder 84 2) "0")
+ (test-case '(quotient 83 2) "41")
+ (test-case '(remainder 83 2) "1")
+
+ (test-case '(= 42 43) "#f")
+ (test-case '(= 42 42) "#t")
+ (test-case '(= 42 41) "#f")
+
+ (test-case '(< 42 43) "#t")
+ (test-case '(< 42 42) "#f")
+ (test-case '(< 42 41) "#f")
+
+ (test-case '(<= 42 43) "#t")
+ (test-case '(<= 42 42) "#t")
+ (test-case '(<= 42 41) "#f")
+
+ (test-case '(> 42 43) "#f")
+ (test-case '(> 42 42) "#f")
+ (test-case '(> 42 41) "#t")
+
+ (test-case '(<= 42 43) "#t")
+ (test-case '(<= 42 42) "#t")
+ (test-case '(<= 42 41) "#f")
+
+ (test-case '(boolean=? #t #t) "#t")
+ (test-case '(boolean=? #t #f) "#f")
+
+ (test-case '(char=? #\a #\b) "#f")
+ (test-case '(char=? #\a #\a) "#t")
+
+ (test-case '(char<? #\a #\b) "#t")
+ (test-case '(char<? #\a #\a) "#f")
+ (test-case '(char<? #\b #\a) "#f")
+
+ (test-case '(char<=? #\a #\b) "#t")
+ (test-case '(char<=? #\a #\a) "#t")
+ (test-case '(char<=? #\b #\a) "#f")
+
+ (test-case '(char>? #\a #\b) "#f")
+ (test-case '(char>? #\a #\a) "#f")
+ (test-case '(char>? #\b #\a) "#t")
+
+ (test-case '(char>=? #\a #\b) "#f")
+ (test-case '(char>=? #\a #\a) "#t")
+ (test-case '(char>=? #\b #\a) "#t"))
