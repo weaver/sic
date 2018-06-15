@@ -66,7 +66,7 @@
 (define (primcall-operand2 expr)
   (car (cddr expr)))
 
-(define (emit-unary-primcall expr si)
+(define (emit-unary-primcall expr si env)
 
   (define (compare-to literal)
     (emit "cmpl $" literal ", %eax")
@@ -87,7 +87,7 @@
     (apply op args)
     (shift-left-and-tag BOOL-SHIFT BOOL-TAG))
 
-  (emit-expr (primcall-operand1 expr) si)
+  (emit-expr (primcall-operand1 expr) si env)
   (case (primcall-op expr)
     ((add1)
      (emit "addl $" (immediate-repr 1) ", %eax"))
@@ -131,16 +131,15 @@
 (define (stack-get si)
   (string-append (number->string si) "(" STACK-POINTER ")"))
 
+(define (move-to-stack si)
+  (emit "movl %eax, " (stack-get si)))
 
-(define (emit-binary-primcall expr si)
+(define (emit-binary-primcall expr si env)
   (define (emit-op2)
-    (emit-expr (primcall-operand2 expr) si))
-
-  (define (push-op2)
-    (emit "movl %eax, " (stack-get si)))
+    (emit-expr (primcall-operand2 expr) si env))
 
   (define (emit-op1)
-    (emit-expr (primcall-operand1 expr) (next-stack-index si)))
+    (emit-expr (primcall-operand1 expr) (next-stack-index si) env))
 
   (define (shift-right shift)
     (emit "shrl $" shift ", %eax"))
@@ -151,7 +150,7 @@
   (define (emit-args shift)
     (emit-op2)
     (shift-right shift)
-    (push-op2)
+    (move-to-stack si)
     (emit-op1)
     (shift-right shift))
 
@@ -222,14 +221,67 @@
     (else
      (raise (compilation-error 'unrecognized-binary-primcall expr)))))
 
-(define (emit-expr expr si)
+(define (init-env)
+  '())
+
+(define (extend-env name si env)
+  (cons (cons name si)
+	env))
+
+(define (lookup name env)
+  (let ((probe (assq name env)))
+    (if probe
+	(cdr probe)
+	(raise (compilation-error 'lookup-failed name)))))
+
+(define variable? symbol?)
+
+(define (emit-variable expr si env)
+  (emit "movl " (stack-get (lookup expr env)) ", %eax"))
+
+(define (let? expr)
+  (and (pair? expr)
+       (eq? 'let (car expr))))
+
+(define (let-bindings expr)
+  ;(LET BINDINGS BODY)
+  (cadr expr))
+
+(define (let-body expr)
+  ;(LET BINDINGS BODY)
+  (car (cddr expr)))
+
+(define (binding-name binding)
+  (car binding))
+
+(define (binding-expr binding)
+  (cadr binding))
+
+(define (emit-let expr si env)
+  (let loop ((bindings (let-bindings expr))
+	     (si si)
+	     (env env))
+    (if (null? bindings)
+	(emit-expr (let-body expr) si env)
+	(let ((binding (car bindings)))
+	  (emit-expr (binding-expr binding) si env)
+	  (move-to-stack si)
+	  (loop (cdr bindings)
+		(next-stack-index si)
+		(extend-env (binding-name binding) si env))))))
+
+(define (emit-expr expr si env)
   (cond
    ((immediate? expr)
     (emit-immediate expr))
+   ((variable? expr)
+    (emit-variable expr si env))
+   ((let? expr)
+    (emit-let expr si env))
    ((unary-primcall? expr)
-    (emit-unary-primcall expr si))
+    (emit-unary-primcall expr si env))
    ((binary-primcall? expr)
-    (emit-binary-primcall expr si))
+    (emit-binary-primcall expr si env))
    (else
     (raise (compilation-error 'unrecognized-expr expr)))))
 
@@ -242,7 +294,7 @@
    "	.cfi_startproc"
    "	.cfi_def_cfa_offset 16")
 
-  (emit-expr expr (init-stack-index))
+  (emit-expr expr (init-stack-index) (init-env))
   (emit "retq")
 
   (emit-all
@@ -258,7 +310,7 @@
    ".LFB0:"
    "	.cfi_startproc")
 
-  (emit-expr expr (init-stack-index))
+  (emit-expr expr (init-stack-index) (init-env))
 
   (emit-all
     "	ret"
@@ -282,7 +334,8 @@
 (define (compile-test! source)
   (with-output-to-file "test.s"
     (lambda ()
-      (compile-program source))))
+      (compile-program source)))
+  )
 
 (define (run-test! source)
   (compile-test! source)
@@ -401,3 +454,14 @@
  (test-case '(char>=? #\a #\b) "#f")
  (test-case '(char>=? #\a #\a) "#t")
  (test-case '(char>=? #\b #\a) "#t"))
+
+(test-section
+ "3.5 Local Variables"
+
+ (test-case '(let ((a 1))
+	       a)
+	    "1")
+ (test-case '(let ((a 1) (b 2))
+	       (let ((a 3))
+		 (+ a b)))
+	    "5"))

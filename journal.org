@@ -301,3 +301,7 @@ Helpful list of Intel [[https://web.itu.edu.tr/kesgin/mul06/intel/index.html][x8
 + reconcile assembley header/footer of Linux/gcc with OSX/gcc-clang
 + figure out why first-run of test-cases is slow on OS X
 + return a remainder
+*** 3.5 Local Variables
+
+Support =LET= using an alist for environment. Assume that any symbol
+can be a variable name.
