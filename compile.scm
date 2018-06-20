@@ -1,12 +1,15 @@
 (import (scheme base)
 	(scheme write)
 	(scheme file)
+	(scheme cxr)
+	(scheme process-context)
 	(chibi process)
 	(srfi 33))
 
 (define (print . args)
   (for-each display args)
   (newline))
+
 
 
 ;; Compiler
@@ -270,14 +273,45 @@
 		(next-stack-index si)
 		(extend-env (binding-name binding) si env))))))
 
+(define (if? expr)
+  (and (pair? expr)
+       (eq? 'if (car expr))))
+
+(define unique-label
+  (let ((counter 0))
+    (lambda ()
+      (set! counter (+ counter 1))
+      (string-append "L" (number->string counter)))))
+
+(define (emit-if expr si env)
+  ;; (IF TEST CONSEQUENT ALTERNATE)
+  ;; (IF TEST CONSEQUENT)
+  (let ((label-alternate (unique-label))
+	(label-end (unique-label))
+	(test (cadr expr))
+	(consequent (caddr expr))
+	(alternate (if (null? (cdddr expr)) #f (cadddr expr))))
+    (emit-expr test si env)
+    (emit "cmpl $" (immediate-repr #f) ", %eax")
+    (emit "je " label-alternate)
+    (emit-expr consequent si env)
+    (emit "jmp " label-end)
+    (emit label-alternate ":")
+    (if alternate
+	(emit-expr alternate si env)
+	(emit-immediate #f))
+    (emit label-end ":")))
+
 (define (emit-expr expr si env)
   (cond
    ((immediate? expr)
     (emit-immediate expr))
-   ((variable? expr)
-    (emit-variable expr si env))
    ((let? expr)
     (emit-let expr si env))
+   ((if? expr)
+    (emit-if expr si env))
+   ((variable? expr)
+    (emit-variable expr si env))
    ((unary-primcall? expr)
     (emit-unary-primcall expr si env))
    ((binary-primcall? expr)
@@ -334,21 +368,27 @@
 (define (compile-test! source)
   (with-output-to-file "test.s"
     (lambda ()
-      (compile-program source)))
-  )
+      (compile-program source))))
 
 (define (run-test! source)
-  (compile-test! source)
-  (and (system? '("/bin/sh" "-c" "make --silent build-test"))
-       (process->string "./test")))
+  (call-with-current-continuation
+   (lambda (exit)
+     (with-exception-handler
+	 (lambda (exc) (exit exc))
+       (lambda ()
+	 (compile-test! source)
+	 (and (system? '("/bin/sh" "-c" "make --silent build-test"))
+	      (process->string "./test")))))))
 
 (define (evaluate-test test)
   (let* ((source (test-case-source test))
 	 (expect (test-case-expect test))
 	 (result (run-test! source)))
     (cond
+     ((error-object? result)
+      (print "ERROR " (error-object-message result) ": " (error-object-irritants result)))
      ((eq? result #f)
-       (print "ERROR " source)
+       (print "OOPS  " source)
        #f)
      ((not (string=? result expect))
        (print "✗ FAIL  " source ": expected {" expect "}, got {" result "}")
@@ -465,3 +505,11 @@
 	       (let ((a 3))
 		 (+ a b)))
 	    "5"))
+
+(test-section
+ "3.6 Conditional Expressions"
+
+ (test-case '(if (< 1 2) #\a #\b) "#\\a")
+ (test-case '(if (> 1 2) #\a #\b) "#\\b")
+ (test-case '(if (< 1 2) #\a) "#\\a")
+ (test-case '(if (> 1 2) #\a) "#f"))

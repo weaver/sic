@@ -305,3 +305,8 @@ Helpful list of Intel [[https://web.itu.edu.tr/kesgin/mul06/intel/index.html][x8
 
 Support =LET= using an alist for environment. Assume that any symbol
 can be a variable name.
+** Wed Jun 20 2018
+*** 3.6 Conditional Expressions
+
+Support both ~(if test consequent alternate)~ and ~(if test
+consequent)~.
